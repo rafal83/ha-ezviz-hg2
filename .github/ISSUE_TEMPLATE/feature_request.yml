@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest support for a confirmed EZVIZ function
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: input
+    attributes:
+      label: Device model and firmware
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Requested behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Evidence
+      description: Provide a redacted product profile, diagnostics, or observed official app behavior.
+    validations:
+      required: true

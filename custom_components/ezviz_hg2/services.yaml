@@ -1,0 +1,107 @@
+send_iot_action:
+  name: Envoyer une action IoT expérimentale
+  description: >-
+    Envoie une action brute à l'API EZVIZ. À utiliser uniquement avec les
+    identifiants observés dans les diagnostics du HG2.
+  fields:
+    config_entry_id:
+      name: Entrée de configuration
+      required: true
+      selector:
+        config_entry:
+          integration: ezviz_hg2
+    serial:
+      name: Numéro de série
+      required: true
+      selector:
+        text:
+    resource_id:
+      name: Ressource
+      required: true
+      selector:
+        text:
+    local_index:
+      name: Index local
+      required: true
+      default: "0"
+      selector:
+        text:
+    domain_id:
+      name: Domaine IoT
+      required: true
+      selector:
+        text:
+    action_id:
+      name: Action IoT
+      required: true
+      selector:
+        text:
+    payload:
+      name: Corps JSON
+      required: false
+      default: {}
+      selector:
+        object:
+get_iot_feature:
+  name: Lire une fonction IoT
+  description: Lit une fonction brute de l'API IoT EZVIZ.
+  fields:
+    config_entry_id:
+      name: Entrée de configuration
+      required: true
+      selector:
+        config_entry:
+          integration: ezviz_hg2
+    serial:
+      name: Numéro de série
+      required: true
+      selector:
+        text:
+    resource_id:
+      name: Ressource
+      required: true
+      selector:
+        text:
+    local_index:
+      name: Index local
+      required: true
+      default: "0"
+      selector:
+        text:
+    domain_id:
+      name: Domaine IoT
+      required: true
+      selector:
+        text:
+    action_id:
+      name: Fonction IoT
+      required: true
+      selector:
+        text:
+get_cloud_metadata:
+  name: Lire les métadonnées cloud
+  description: >-
+    Lit les domaines de service EZVIZ ou un filtre pagelist, sans exécuter
+    aucune action d'appareil.
+  fields:
+    config_entry_id:
+      name: Entrée de configuration
+      required: true
+      selector:
+        config_entry:
+          integration: ezviz_hg2
+    filter:
+      name: Filtre pagelist
+      required: false
+      selector:
+        text:
+get_manual_scenes:
+  name: Lire les scènes manuelles
+  description: Lit les scènes manuelles EZVIZ sans les exécuter.
+  fields:
+    config_entry_id:
+      name: Entrée de configuration
+      required: true
+      selector:
+        config_entry:
+          integration: ezviz_hg2

@@ -1,0 +1,41 @@
+{
+  "title": "EZVIZ HG2 & CH3",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connecter le compte EZVIZ",
+        "description": "Connecte les motorisations HG2 et leurs carillons CH3 associés depuis un compte EZVIZ.",
+        "data": {
+          "username": "Adresse e-mail",
+          "password": "Mot de passe",
+          "url": "Serveur API",
+          "timeout": "Délai d’attente"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnecter le compte EZVIZ",
+        "description": "La session EZVIZ a expiré.",
+        "data": {
+          "password": "Mot de passe"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de joindre EZVIZ",
+      "invalid_auth": "Identifiants incorrects",
+      "mfa_required": "La double authentification EZVIZ doit être désactivée",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Ce compte est déjà configuré",
+      "reauth_successful": "Reconnexion réussie"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "discovered_devices": {
+          "name": "Appareils HG2 et CH3 détectés"
+      }
+    }
+  }
+}

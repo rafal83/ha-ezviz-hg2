@@ -1,0 +1,13 @@
+{
+  "domain": "ezviz_hg2",
+  "name": "EZVIZ HG2 & CH3",
+  "codeowners": ["@rafal83"],
+  "config_flow": true,
+  "documentation": "https://github.com/rafal83/ha-ezviz-hg2",
+  "issue_tracker": "https://github.com/rafal83/ha-ezviz-hg2/issues",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "loggers": ["pyezvizapi"],
+  "requirements": ["pyezvizapi==1.0.0.7"],
+  "version": "0.1.0"
+}

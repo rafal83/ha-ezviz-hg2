@@ -1,0 +1,41 @@
+{
+  "title": "EZVIZ HG2 & CH3",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect an EZVIZ account",
+        "description": "Connect HG2 gate controllers and their associated CH3 chimes from an EZVIZ account.",
+        "data": {
+          "username": "Email address",
+          "password": "Password",
+          "url": "API server",
+          "timeout": "Timeout"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect the EZVIZ account",
+        "description": "The EZVIZ session has expired.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to EZVIZ",
+      "invalid_auth": "Invalid credentials",
+      "mfa_required": "EZVIZ two-factor authentication must be disabled",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This account is already configured",
+      "reauth_successful": "Reauthentication successful"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "discovered_devices": {
+          "name": "Discovered HG2 and CH3 devices"
+      }
+    }
+  }
+}
