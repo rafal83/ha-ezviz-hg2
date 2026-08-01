@@ -31,6 +31,17 @@
       "reauth_successful": "Reconnexion réussie"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sondage du statut de la porte",
+        "description": "Fréquence, en secondes, d’interrogation du cloud EZVIZ pour le statut de la porte.",
+        "data": {
+          "scan_interval": "Intervalle de sondage"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "discovered_devices": {

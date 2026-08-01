@@ -8,7 +8,9 @@ CONF_SESSION_ID: Final = "session_id"
 CONF_RFSESSION_ID: Final = "rf_session_id"
 
 DEFAULT_API_URL: Final = "apiieu.ezvizlife.com"
-DEFAULT_SCAN_INTERVAL: Final = 5
+DEFAULT_SCAN_INTERVAL: Final = 15
+MIN_SCAN_INTERVAL: Final = 5
+MAX_SCAN_INTERVAL: Final = 300
 FULL_REFRESH_INTERVAL: Final = 60
 DEFAULT_TIMEOUT: Final = 30
 

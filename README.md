@@ -11,7 +11,7 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 ## Features
 
 - Native gate `cover` with open, close, and pause commands.
-- Direct gate status polling every 5 seconds.
+- Direct gate status polling with a configurable interval (15 seconds by default, adjustable from the integration's **Configure** options).
 - Correct HG2 pause behavior: movement can only resume in the direction that was active before pausing.
 - HG2 motor speed, direction, anti-bounce sensitivity, automatic closing, STOP input, warning light, warning sound, fill light, and notification settings.
 - CH3 mute mode, mute plan, microphone volume, night light, loitering detection, and network port protection.

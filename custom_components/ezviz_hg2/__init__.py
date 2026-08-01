@@ -7,7 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_TIMEOUT, CONF_URL
+from homeassistant.const import CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_URL
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
@@ -71,6 +71,13 @@ MANUAL_SCENES_SERVICE_SCHEMA = vol.Schema(
 )
 
 
+async def _async_update_listener(
+    hass: HomeAssistant, entry: EzvizHg2ConfigEntry
+) -> None:
+    """Reload the config entry when its options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: EzvizHg2ConfigEntry
 ) -> bool:
@@ -81,12 +88,12 @@ async def async_setup_entry(
         "api_url": entry.data[CONF_URL],
     }
     api = EzvizHg2Api(token, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
-    coordinator = EzvizHg2Coordinator(
-        hass, entry, api, DEFAULT_SCAN_INTERVAL
-    )
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    coordinator = EzvizHg2Coordinator(hass, entry, api, scan_interval)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     if not hass.services.has_service(DOMAIN, SERVICE_SEND_IOT_ACTION):
         async def async_send_iot_action(call: ServiceCall) -> dict[str, Any]:
