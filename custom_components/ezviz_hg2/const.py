@@ -14,6 +14,12 @@ MAX_SCAN_INTERVAL: Final = 300
 FULL_REFRESH_INTERVAL: Final = 60
 DEFAULT_TIMEOUT: Final = 30
 
+CONF_OPEN_DURATION: Final = "open_duration"
+CONF_CLOSE_DURATION: Final = "close_duration"
+DEFAULT_TRAVEL_DURATION: Final = 20
+MIN_TRAVEL_DURATION: Final = 3
+MAX_TRAVEL_DURATION: Final = 120
+
 SERVICE_SEND_IOT_ACTION: Final = "send_iot_action"
 SERVICE_GET_IOT_FEATURE: Final = "get_iot_feature"
 SERVICE_GET_CLOUD_METADATA: Final = "get_cloud_metadata"

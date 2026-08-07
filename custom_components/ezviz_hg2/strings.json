@@ -35,9 +35,11 @@
     "step": {
       "init": {
         "title": "Gate status polling",
-        "description": "How often, in seconds, to poll the EZVIZ cloud for gate status.",
+        "description": "How often, in seconds, to poll the EZVIZ cloud for gate status, and the gate's full travel time used to estimate its position (the cloud only reports closed vs. not-closed).",
         "data": {
-          "scan_interval": "Scan interval"
+          "scan_interval": "Scan interval",
+          "open_duration": "Full opening travel time (seconds)",
+          "close_duration": "Full closing travel time (seconds)"
         }
       }
     }
@@ -49,6 +51,11 @@
       },
       "raw_data": {
           "name": "Raw data"
+      }
+    },
+    "button": {
+      "calibrate_travel_duration": {
+          "name": "Calibrate travel duration"
       }
     }
   }

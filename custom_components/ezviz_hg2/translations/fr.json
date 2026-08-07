@@ -35,9 +35,11 @@
     "step": {
       "init": {
         "title": "Sondage du statut de la porte",
-        "description": "Fréquence, en secondes, d’interrogation du cloud EZVIZ pour le statut de la porte.",
+        "description": "Fréquence, en secondes, d’interrogation du cloud EZVIZ pour le statut de la porte, et le temps de course complet du portail utilisé pour estimer sa position (le cloud ne renvoie que fermé ou pas fermé).",
         "data": {
-          "scan_interval": "Intervalle de sondage"
+          "scan_interval": "Intervalle de sondage",
+          "open_duration": "Temps de course en ouverture (secondes)",
+          "close_duration": "Temps de course en fermeture (secondes)"
         }
       }
     }
@@ -49,6 +51,11 @@
       },
       "raw_data": {
           "name": "Données brutes"
+      }
+    },
+    "button": {
+      "calibrate_travel_duration": {
+          "name": "Calibrer le temps de course"
       }
     }
   }

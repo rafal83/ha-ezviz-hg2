@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import monotonic
 from typing import Any
 
 from homeassistant.components.cover import (
@@ -15,7 +16,12 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_CLOSE_DURATION,
+    CONF_OPEN_DURATION,
+    DEFAULT_TRAVEL_DURATION,
+    DOMAIN,
+)
 from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
 
 ACTION_DOMAIN = "RemoteControlDoor"
@@ -69,6 +75,12 @@ def _door_status(device: dict[str, Any]) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def _eased_fraction(fraction: float) -> float:
+    """Smoothstep 0..1: slow at both ends, matching the gate motor's ramp."""
+    fraction = min(1.0, max(0.0, fraction))
+    return fraction * fraction * (3 - 2 * fraction)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: EzvizHg2ConfigEntry,
@@ -76,8 +88,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up covers for discovered HG2 devices."""
     coordinator = entry.runtime_data
+    open_duration = entry.options.get(CONF_OPEN_DURATION, DEFAULT_TRAVEL_DURATION)
+    close_duration = entry.options.get(CONF_CLOSE_DURATION, DEFAULT_TRAVEL_DURATION)
     async_add_entities(
-        EzvizHg2Cover(coordinator, serial)
+        EzvizHg2Cover(coordinator, serial, open_duration, close_duration)
         for serial, device in coordinator.data.items()
         if isinstance(device, dict) and _is_hg2(device)
     )
@@ -96,10 +110,23 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         | CoverEntityFeature.STOP
     )
 
-    def __init__(self, coordinator: EzvizHg2Coordinator, serial: str) -> None:
+    def __init__(
+        self,
+        coordinator: EzvizHg2Coordinator,
+        serial: str,
+        open_duration: float,
+        close_duration: float,
+    ) -> None:
         super().__init__(coordinator)
         self._serial = serial
         self._attr_unique_id = f"{serial}_gate"
+        self._open_duration = open_duration
+        self._close_duration = close_duration
+        self._position: float | None = None
+        self._movement_start: float | None = None
+        self._movement_start_position: float | None = None
+        self._movement_target: float | None = None
+        self._movement_duration: float | None = None
 
     @property
     def available(self) -> bool:
@@ -131,6 +158,65 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
             return False
         return None
 
+    @property
+    def is_opening(self) -> bool:
+        self._estimated_position()
+        return self._movement_target == 100.0
+
+    @property
+    def is_closing(self) -> bool:
+        self._estimated_position()
+        return self._movement_target == 0.0
+
+    @property
+    def current_cover_position(self) -> int | None:
+        """Return the approximate travel position, estimated from elapsed time.
+
+        The EZVIZ cloud only reports closed vs. not-closed, so this is a
+        rough estimate based on the configured full-travel durations.
+        """
+        position = self._estimated_position()
+        return None if position is None else round(position)
+
+    def _estimated_position(self) -> float | None:
+        if self._movement_start is None or not self._movement_duration:
+            return self._position
+        elapsed = monotonic() - self._movement_start
+        fraction = _eased_fraction(elapsed / self._movement_duration)
+        if fraction >= 1.0:
+            self._position = self._movement_target
+            self._clear_movement()
+            return self._position
+        return self._movement_start_position + fraction * (
+            self._movement_target - self._movement_start_position
+        )
+
+    def _clear_movement(self) -> None:
+        self._movement_start = None
+        self._movement_start_position = None
+        self._movement_target = None
+        self._movement_duration = None
+
+    def _start_movement(self, target: float, duration: float) -> None:
+        current = self._estimated_position()
+        if current is None:
+            current = 0.0 if target == 100.0 else 100.0
+        self._position = current
+        self._movement_start = monotonic()
+        self._movement_start_position = current
+        self._movement_target = target
+        self._movement_duration = duration
+
+    def _handle_coordinator_update(self) -> None:
+        device = self.coordinator.data.get(self._serial)
+        status = _door_status(device) if isinstance(device, dict) else None
+        if status == 0:
+            self._position = 0.0
+            self._clear_movement()
+        elif status == 1 and self._position is None and self._movement_start is None:
+            self._position = 100.0
+        super()._handle_coordinator_update()
+
     async def _async_command(
         self, command: str, position: int | None = None
     ) -> None:
@@ -157,12 +243,16 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the gate."""
+        self._start_movement(100.0, self._open_duration)
         await self._async_command("open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the gate."""
+        self._start_movement(0.0, self._close_duration)
         await self._async_command("close")
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Pause gate movement."""
+        self._position = self._estimated_position()
+        self._clear_movement()
         await self._async_command("pause")

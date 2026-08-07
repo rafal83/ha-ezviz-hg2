@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.5
+
+- Add a "Calibrate travel duration" button (disabled by default) that automatically measures the gate's full close duration and applies it to both the open and close travel-time options, instead of requiring a manual guess.
+
+## 0.2.4
+
+- Estimate the gate's travel position from configurable open/close durations (new options flow fields), eased to match the motor slowing down near the end of its travel, since the EZVIZ cloud only reports closed versus not-closed.
+
 ## 0.2.3
 
 - Mark the gate cover as an assumed-state entity so the open and close buttons stay available regardless of the last known door status, since the EZVIZ API only reports closed versus not-closed and cannot confirm a full open position.

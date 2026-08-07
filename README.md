@@ -10,7 +10,7 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 
 ## Features
 
-- Native gate `cover` with open, close, and pause commands.
+- Native gate `cover` with open, close, and pause commands, plus an estimated travel position based on configurable open/close durations.
 - Direct gate status polling with a configurable interval (15 seconds by default, adjustable from the integration's **Configure** options).
 - HG2 motor speed, direction, anti-bounce sensitivity, automatic closing, STOP input, warning light, warning sound, fill light, and notification settings.
 - CH3 mute mode, mute plan, microphone volume, night light, loitering detection, and network port protection.
@@ -43,7 +43,11 @@ The HG2 reports a binary door status:
 - `0`: closed
 - `1`: open or partially open
 
-The cloud does not report a reliable movement percentage. Position control is therefore intentionally not exposed by the `cover` entity. The HG2 hardware has a separate custom opening preset, exposed as a `select` entity.
+The cloud does not report a reliable movement percentage, so the `cover` entity estimates its position from the configured full open/close travel times (adjustable from the integration's **Configure** options) instead of a real reading. The estimate is eased to account for the gate slowing down near the end of its travel, and it resyncs to 0% whenever the cloud confirms the gate is fully closed. It is informational only: the entity does not support setting an exact position.
+
+A **Calibrate travel duration** button (disabled by default, since it fully cycles the gate) measures these durations automatically: it opens the gate, waits for it to settle fully open, then times a full close down to a confirmed closed status. Both directions are set to that measurement, assuming a roughly symmetrical travel. This is unrelated to the HG2's own native **Calibrer la course** button, which calibrates the motor's internal travel limits and does not affect what the cloud reports.
+
+The HG2 hardware has a separate custom opening preset, exposed as a `select` entity.
 
 ## CH3 limitations
 

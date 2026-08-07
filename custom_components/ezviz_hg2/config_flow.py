@@ -30,14 +30,19 @@ from homeassistant.const import (
 from homeassistant.core import callback
 
 from .const import (
+    CONF_CLOSE_DURATION,
+    CONF_OPEN_DURATION,
     CONF_RFSESSION_ID,
     CONF_SESSION_ID,
     DEFAULT_API_URL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
+    DEFAULT_TRAVEL_DURATION,
     DOMAIN,
     MAX_SCAN_INTERVAL,
+    MAX_TRAVEL_DURATION,
     MIN_SCAN_INTERVAL,
+    MIN_TRAVEL_DURATION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -170,11 +175,29 @@ class EzvizHg2OptionsFlow(OptionsFlow):
         current = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
         )
+        current_open_duration = self.config_entry.options.get(
+            CONF_OPEN_DURATION, DEFAULT_TRAVEL_DURATION
+        )
+        current_close_duration = self.config_entry.options.get(
+            CONF_CLOSE_DURATION, DEFAULT_TRAVEL_DURATION
+        )
         schema = vol.Schema(
             {
                 vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
                     vol.Coerce(int),
                     vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                ),
+                vol.Required(
+                    CONF_OPEN_DURATION, default=current_open_duration
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_TRAVEL_DURATION, max=MAX_TRAVEL_DURATION),
+                ),
+                vol.Required(
+                    CONF_CLOSE_DURATION, default=current_close_duration
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_TRAVEL_DURATION, max=MAX_TRAVEL_DURATION),
                 ),
             }
         )
