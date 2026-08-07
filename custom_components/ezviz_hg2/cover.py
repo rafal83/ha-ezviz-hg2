@@ -89,6 +89,7 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
     _attr_device_class = CoverDeviceClass.GATE
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_assumed_state = True
     _attr_supported_features = (
         CoverEntityFeature.OPEN
         | CoverEntityFeature.CLOSE
