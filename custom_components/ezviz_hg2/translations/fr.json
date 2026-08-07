@@ -56,6 +56,9 @@
     "button": {
       "calibrate_travel_duration": {
           "name": "Calibrer le temps de course"
+      },
+      "reset_travel_duration": {
+          "name": "Réinitialiser la calibration"
       }
     }
   }

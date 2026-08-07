@@ -99,6 +99,10 @@ async def async_setup_entry(
         EzvizTravelDurationCalibrationButton(coordinator, entry, serial)
         for serial in hg2_serials
     )
+    async_add_entities(
+        EzvizTravelDurationResetButton(coordinator, entry, serial)
+        for serial in hg2_serials
+    )
 
 
 class EzvizTravelCalibrationButton(EzvizFeatureEntity, ButtonEntity):
@@ -122,20 +126,10 @@ class EzvizTravelCalibrationButton(EzvizFeatureEntity, ButtonEntity):
         await self.coordinator.async_request_refresh()
 
 
-class EzvizTravelDurationCalibrationButton(
-    CoordinatorEntity[EzvizHg2Coordinator], ButtonEntity
-):
-    """Time a full close cycle and use it for both cover travel directions.
-
-    The EZVIZ cloud only ever confirms a fully closed gate, so this opens the
-    gate, waits long enough for it to settle fully open, then times the close
-    down to a confirmed closed status. Both open_duration and close_duration
-    are set to that measurement, assuming a roughly symmetrical travel.
-    """
+class _EzvizGateButton(CoordinatorEntity[EzvizHg2Coordinator], ButtonEntity):
+    """Shared device linkage for HG2 gate travel-calibration buttons."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "calibrate_travel_duration"
-    _attr_icon = "mdi:timer-sync-outline"
     _attr_entity_category = EntityCategory.CONFIG
     _attr_entity_registry_enabled_default = False
 
@@ -145,7 +139,6 @@ class EzvizTravelDurationCalibrationButton(
         super().__init__(coordinator)
         self._entry = entry
         self._serial = serial
-        self._attr_unique_id = f"{serial}_calibrate_travel_duration"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -158,6 +151,25 @@ class EzvizTravelDurationCalibrationButton(
             sw_version=info.get("version"),
             serial_number=self._serial,
         )
+
+
+class EzvizTravelDurationCalibrationButton(_EzvizGateButton):
+    """Time a full close cycle and use it for both cover travel directions.
+
+    The EZVIZ cloud only ever confirms a fully closed gate, so this opens the
+    gate, waits long enough for it to settle fully open, then times the close
+    down to a confirmed closed status. Both open_duration and close_duration
+    are set to that measurement, assuming a roughly symmetrical travel.
+    """
+
+    _attr_translation_key = "calibrate_travel_duration"
+    _attr_icon = "mdi:timer-sync-outline"
+
+    def __init__(
+        self, coordinator: EzvizHg2Coordinator, entry: ConfigEntry, serial: str
+    ) -> None:
+        super().__init__(coordinator, entry, serial)
+        self._attr_unique_id = f"{serial}_calibrate_travel_duration"
 
     async def _async_send_door_command(self, command: str) -> None:
         device = self.coordinator.data[self._serial]
@@ -209,3 +221,25 @@ class EzvizTravelDurationCalibrationButton(
                 CONF_CLOSE_DURATION: duration,
             },
         )
+
+
+class EzvizTravelDurationResetButton(_EzvizGateButton):
+    """Clear the measured or manually entered travel durations.
+
+    Without a calibration, the cover reports no position estimate at all.
+    """
+
+    _attr_translation_key = "reset_travel_duration"
+    _attr_icon = "mdi:timer-remove-outline"
+
+    def __init__(
+        self, coordinator: EzvizHg2Coordinator, entry: ConfigEntry, serial: str
+    ) -> None:
+        super().__init__(coordinator, entry, serial)
+        self._attr_unique_id = f"{serial}_reset_travel_duration"
+
+    async def async_press(self) -> None:
+        options = dict(self._entry.options)
+        options.pop(CONF_OPEN_DURATION, None)
+        options.pop(CONF_CLOSE_DURATION, None)
+        self.hass.config_entries.async_update_entry(self._entry, options=options)

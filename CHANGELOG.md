@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.6
+
+- Support dragging the gate cover to a target position: it is timed via the same travel model as a full open/close, then automatically paused near the target. Only available once travel durations are calibrated.
+- Stop assuming a 20-second default travel duration: the position estimate and set-position support now stay off until the open and close durations are actually known (via calibration or manual entry), instead of silently guessing.
+- Add a "Reset travel calibration" button (disabled by default) to clear the measured or entered travel durations and go back to no position estimate.
+- Ship the official EZVIZ icon and logo assets (including hDPI variants) in the integration's local `brand` folder.
+
 ## 0.2.5
 
 - Add a "Calibrate travel duration" button (disabled by default) that automatically measures the gate's full close duration and applies it to both the open and close travel-time options, instead of requiring a manual guess.

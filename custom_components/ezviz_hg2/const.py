@@ -16,7 +16,6 @@ DEFAULT_TIMEOUT: Final = 30
 
 CONF_OPEN_DURATION: Final = "open_duration"
 CONF_CLOSE_DURATION: Final = "close_duration"
-DEFAULT_TRAVEL_DURATION: Final = 20
 MIN_TRAVEL_DURATION: Final = 3
 MAX_TRAVEL_DURATION: Final = 120
 

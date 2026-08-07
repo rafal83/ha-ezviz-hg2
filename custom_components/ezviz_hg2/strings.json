@@ -56,6 +56,9 @@
     "button": {
       "calibrate_travel_duration": {
           "name": "Calibrate travel duration"
+      },
+      "reset_travel_duration": {
+          "name": "Reset travel calibration"
       }
     }
   }
