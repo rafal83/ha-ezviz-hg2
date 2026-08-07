@@ -46,6 +46,9 @@
     "sensor": {
       "discovered_devices": {
           "name": "Discovered HG2 and CH3 devices"
+      },
+      "raw_data": {
+          "name": "Raw data"
       }
     }
   }

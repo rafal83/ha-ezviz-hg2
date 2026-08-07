@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
+from homeassistant.const import EntityCategory, UnitOfInformation
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -92,6 +97,10 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [EzvizHg2DiscoverySensor(coordinator, entry)]
     entities.extend(
         EzvizHg2DeviceSensor(coordinator, serial)
+        for serial in coordinator.data
+    )
+    entities.extend(
+        EzvizHg2RawDataSensor(coordinator, serial)
         for serial in coordinator.data
     )
     async_add_entities(entities)
@@ -208,3 +217,52 @@ class EzvizHg2DeviceSensor(CoordinatorEntity[EzvizHg2Coordinator], SensorEntity)
             "status_keys": _mapping_keys(device.get("STATUS")),
             "switch_count": len(device.get("SWITCH") or []),
         }
+
+
+class EzvizHg2RawDataSensor(CoordinatorEntity[EzvizHg2Coordinator], SensorEntity):
+    """Expose the complete raw API payload for one device, for debugging.
+
+    Disabled by default: the payload can be large and is only meant to be
+    enabled temporarily to inspect it in Developer Tools > States.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "raw_data"
+    _attr_icon = "mdi:code-json"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = SensorDeviceClass.DATA_SIZE
+    _attr_native_unit_of_measurement = UnitOfInformation.BYTES
+
+    def __init__(self, coordinator: EzvizHg2Coordinator, serial: str) -> None:
+        super().__init__(coordinator)
+        self._serial = serial
+        self._attr_unique_id = f"{serial}_raw_data"
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._serial in self.coordinator.data
+
+    @property
+    def native_value(self) -> int:
+        return len(json.dumps(self.coordinator.data[self._serial], default=str))
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = _info(self.coordinator.data[self._serial])
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._serial)},
+            name=str(info.get("name") or "EZVIZ HG2"),
+            manufacturer="EZVIZ",
+            model=str(
+                info.get("model")
+                or info.get("deviceSubCategory")
+                or "HG2"
+            ),
+            sw_version=info.get("version"),
+            serial_number=self._serial,
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"raw": self.coordinator.data[self._serial]}

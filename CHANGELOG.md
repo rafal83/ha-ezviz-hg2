@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.2
+
+- Add a per-device raw data diagnostic sensor (disabled by default, localized name) exposing the complete raw API payload as an attribute, for debugging without downloading diagnostics.
+
 ## 0.2.1
 
 - Remove the gate direction lock after a pause: it was masking a motor issue, not a real device constraint, so open/close now work freely regardless of the last paused direction.
