@@ -98,8 +98,6 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
     def __init__(self, coordinator: EzvizHg2Coordinator, serial: str) -> None:
         super().__init__(coordinator)
         self._serial = serial
-        self._last_direction: str | None = None
-        self._paused_direction: str | None = None
         self._attr_unique_id = f"{serial}_gate"
 
     @property
@@ -158,25 +156,12 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the gate."""
-        if self._paused_direction == "close":
-            raise HomeAssistantError(
-                "The HG2 was paused while closing; resume closing before opening"
-            )
         await self._async_command("open")
-        self._last_direction = "open"
-        self._paused_direction = None
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the gate."""
-        if self._paused_direction == "open":
-            raise HomeAssistantError(
-                "The HG2 was paused while opening; resume opening before closing"
-            )
         await self._async_command("close")
-        self._last_direction = "close"
-        self._paused_direction = None
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Pause gate movement."""
         await self._async_command("pause")
-        self._paused_direction = self._last_direction

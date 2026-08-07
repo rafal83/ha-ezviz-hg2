@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.1
+
+- Remove the gate direction lock after a pause: it was masking a motor issue, not a real device constraint, so open/close now work freely regardless of the last paused direction.
+
 ## 0.2.0
 
 - Raise the default gate status polling interval from 5 to 15 seconds and make it configurable through the integration's options flow, to ease load on the EZVIZ cloud API.

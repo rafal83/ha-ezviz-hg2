@@ -12,7 +12,6 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 
 - Native gate `cover` with open, close, and pause commands.
 - Direct gate status polling with a configurable interval (15 seconds by default, adjustable from the integration's **Configure** options).
-- Correct HG2 pause behavior: movement can only resume in the direction that was active before pausing.
 - HG2 motor speed, direction, anti-bounce sensitivity, automatic closing, STOP input, warning light, warning sound, fill light, and notification settings.
 - CH3 mute mode, mute plan, microphone volume, night light, loitering detection, and network port protection.
 - Config flow, reauthentication, diagnostics, and service actions.
@@ -45,8 +44,6 @@ The HG2 reports a binary door status:
 - `1`: open or partially open
 
 The cloud does not report a reliable movement percentage. Position control is therefore intentionally not exposed by the `cover` entity. The HG2 hardware has a separate custom opening preset, exposed as a `select` entity.
-
-After pausing, the controller only accepts movement in the same direction. For example, a gate paused while opening must resume opening before it can close.
 
 ## CH3 limitations
 
