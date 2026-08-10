@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.3
+
+- Add optional authenticated BLE configuration for one HG2, disabled by default, with serial discovery through Home Assistant's shared Bluetooth stack and an optional explicit BLE address.
+- Route gate commands through BLE when EZVIZ reports the HG2 offline, the last cloud refresh failed, or the cloud explicitly rejects the command; ambiguous failures after transmission are not automatically retried.
+- Add `ezviz_hg2.send_ble_command` to test open, close, and pause directly over BLE.
+- Add a cloud custom-opening button that uses the configured HG2 custom distance.
+
 ## 0.2.6
 
 - Support dragging the gate cover to a target position: it is timed via the same travel model as a full open/close, then automatically paused near the target. Only available once travel durations are calibrated.

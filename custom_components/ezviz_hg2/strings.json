@@ -34,14 +34,22 @@
   "options": {
     "step": {
       "init": {
-        "title": "Gate status polling",
-        "description": "How often, in seconds, to poll the EZVIZ cloud for gate status, and the gate's full travel time used to estimate its position (the cloud only reports closed vs. not-closed).",
+        "title": "Gate and optional BLE fallback",
+        "description": "Configure cloud polling, travel times, and optional authenticated local BLE control. When enabled, BLE is used when EZVIZ reports the HG2 offline, the last cloud refresh failed, or the cloud explicitly rejects a command. The BLE address is optional if Home Assistant can discover the serial number.",
         "data": {
           "scan_interval": "Scan interval",
+          "ble_fallback_enabled": "Enable BLE fallback",
+          "ble_serial": "HG2 serial number",
+          "ble_address": "BLE address (optional)",
+          "ble_verify_code": "Six-character verification code",
           "open_duration": "Full opening travel time (seconds)",
           "close_duration": "Full closing travel time (seconds)"
         }
       }
+    },
+    "error": {
+      "ble_serial_required": "Select the HG2 that should use BLE",
+      "ble_verify_code_invalid": "The verification code must contain exactly six characters"
     }
   },
   "entity": {
@@ -59,6 +67,9 @@
       },
       "reset_travel_duration": {
           "name": "Reset travel calibration"
+      },
+      "custom_open": {
+          "name": "Custom opening"
       }
     }
   }

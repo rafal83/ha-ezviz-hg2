@@ -11,6 +11,8 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 ## Features
 
 - Native gate `cover` with open, close, and pause commands, plus an estimated travel position based on configurable open/close durations.
+- Optional authenticated local BLE fallback for HG2 gate commands, using Home Assistant's shared Bluetooth adapters.
+- A cloud custom-opening button using the distance selected by the existing custom-opening preset.
 - Direct gate status polling with a configurable interval (15 seconds by default, adjustable from the integration's **Configure** options).
 - HG2 motor speed, direction, anti-bounce sensitivity, automatic closing, STOP input, warning light, warning sound, fill light, and notification settings.
 - CH3 mute mode, mute plan, microphone volume, night light, loitering detection, and network port protection.
@@ -22,7 +24,7 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 - Home Assistant 2026.3.0 or newer.
 - An EZVIZ account containing an HG2 or CH3 device.
 - EZVIZ two-factor authentication must currently be disabled because the upstream API library cannot complete that flow.
-- Internet access to the EZVIZ cloud.
+- Internet access to the EZVIZ cloud for setup and normal operation. Once configured, gate commands can fall back to local BLE when EZVIZ already reports the HG2 offline.
 
 ## Installation with HACS
 
@@ -36,6 +38,26 @@ Until the repository is included in the HACS default list:
 6. Open **Settings > Devices & services > Add integration**.
 7. Search for **EZVIZ HG2 & CH3** and enter your EZVIZ account details.
 
+### Optional BLE fallback
+
+Open the integration's **Configure** dialog and enable **BLE fallback**. Select
+the HG2 and enter the six-character verification code printed on the device.
+The BLE address is optional when Home Assistant can discover the serial number
+from the HG2 advertisement. A local or remote Bluetooth adapter managed by Home
+Assistant must be within range.
+
+Cloud control remains the normal path. When the cached EZVIZ status already
+marks the HG2 offline, open, close, and pause commands go directly through
+authenticated BLE. An explicit cloud rejection also falls back to BLE. If a
+cloud request fails after it was sent without a definitive response, the
+integration does not repeat it because the cloud outcome may be ambiguous.
+
+To test BLE explicitly without involving the cloud, open **Developer tools >
+Actions**, select `ezviz_hg2.send_ble_command`, then provide the configuration
+entry and one of `open`, `close`, or `pause`. The HG2 serial is taken from the
+selected entry's BLE configuration. Keep the gate
+area clear before running a movement command.
+
 ## Gate behavior
 
 The HG2 reports a binary door status:
@@ -47,7 +69,11 @@ The cloud does not report a reliable movement percentage, so the `cover` entity 
 
 The position estimate, and the ability to drag to a target position, are only available once both travel times are known. Until then the entity behaves as a plain open/close/stop cover with no position. A **Calibrate travel duration** button (disabled by default, since it fully cycles the gate) measures these durations automatically: it opens the gate, waits for it to settle fully open, then times a full close down to a confirmed closed status. Both directions are set to that measurement, assuming a roughly symmetrical travel. A matching **Reset travel calibration** button (also disabled by default) clears both durations, returning to no position estimate. Dragging to a position is timed the same way as a full open/close and is not confirmed by the cloud, so it remains approximate. This is unrelated to the HG2's own native **Calibrer la course** button, which calibrates the motor's internal travel limits and does not affect what the cloud reports.
 
-The HG2 hardware has a separate custom opening preset, exposed as a `select` entity.
+The HG2 hardware has a separate custom opening preset, exposed as a `select`
+entity. The **Custom opening** button invokes the native preset through the
+cloud. The tested BLE command accepts open, close, and pause only: intermediate
+values are acknowledged but ignored by the motor, so custom opening is not
+offered through BLE.
 
 ## CH3 limitations
 

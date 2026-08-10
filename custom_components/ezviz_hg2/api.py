@@ -10,6 +10,10 @@ from pyezvizapi.client import EzvizClient
 from pyezvizapi.exceptions import PyEzvizError
 
 
+class EzvizActionRejected(PyEzvizError):
+    """The cloud explicitly rejected an action without executing it."""
+
+
 class EzvizHg2Api:
     """Small adapter around pyezvizapi without modifying the EZVIZ integration."""
 
@@ -62,7 +66,9 @@ class EzvizHg2Api:
 
         meta = result.get("meta")
         if isinstance(meta, dict) and meta.get("code") != 200:
-            raise PyEzvizError(f"EZVIZ action rejected: {json.dumps(meta)}")
+            raise EzvizActionRejected(
+                f"EZVIZ action rejected: {json.dumps(meta)}"
+            )
         return result
 
     def get_iot_feature(

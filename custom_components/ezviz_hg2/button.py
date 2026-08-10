@@ -65,6 +65,31 @@ def _door_status(device: dict[str, Any]) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def _device_info(device: dict[str, Any]) -> dict[str, Any]:
+    info = device.get("deviceInfos")
+    return info if isinstance(info, dict) else {}
+
+
+def _custom_open_mode(device: dict[str, Any]) -> int | None:
+    features = device.get("FEATURE_INFO")
+    if not isinstance(features, dict):
+        return None
+    index = features.get("0", features.get(0))
+    if not isinstance(index, dict):
+        return None
+    global_resource = index.get("global")
+    if not isinstance(global_resource, dict):
+        return None
+    controller = global_resource.get("ChannelControllerMgr")
+    if not isinstance(controller, dict):
+        return None
+    config = controller.get("MotorParamCfg")
+    if not isinstance(config, dict):
+        return None
+    mode = config.get("customMode")
+    return mode if isinstance(mode, int) else None
+
+
 CALIBRATION = FeatureDefinition(
     key="travel_calibration",
     name="Calibrer la course",
@@ -101,6 +126,10 @@ async def async_setup_entry(
     )
     async_add_entities(
         EzvizTravelDurationResetButton(coordinator, entry, serial)
+        for serial in hg2_serials
+    )
+    async_add_entities(
+        EzvizCustomOpenButton(coordinator, entry, serial)
         for serial in hg2_serials
     )
 
@@ -243,3 +272,56 @@ class EzvizTravelDurationResetButton(_EzvizGateButton):
         options.pop(CONF_OPEN_DURATION, None)
         options.pop(CONF_CLOSE_DURATION, None)
         self.hass.config_entries.async_update_entry(self._entry, options=options)
+
+
+class EzvizCustomOpenButton(_EzvizGateButton):
+    """Open the gate to its configured custom distance."""
+
+    _attr_translation_key = "custom_open"
+    _attr_icon = "mdi:gate-arrow-right"
+    _attr_entity_category = None
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(
+        self, coordinator: EzvizHg2Coordinator, entry: ConfigEntry, serial: str
+    ) -> None:
+        super().__init__(coordinator, entry, serial)
+        self._attr_unique_id = f"{serial}_custom_open"
+
+    @property
+    def available(self) -> bool:
+        device = self.coordinator.data.get(self._serial)
+        return (
+            isinstance(device, dict)
+            and super().available
+            and _device_info(device).get("status") != 0
+            and _route(device) is not None
+        )
+
+    async def async_press(self) -> None:
+        device = self.coordinator.data[self._serial]
+        mode = _custom_open_mode(device)
+        if mode is None or mode <= 0:
+            raise HomeAssistantError(
+                "Configure a custom opening distance before using this button"
+            )
+        route = _route(device)
+        if route is None:
+            raise HomeAssistantError("EZVIZ HG2 resource route is unavailable")
+
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.api.send_iot_action,
+                self._serial,
+                "global",
+                route[1],
+                DOOR_ACTION_DOMAIN,
+                DOOR_ACTION_ID,
+                {"controlDoorCmd": "custom"},
+            )
+        except Exception as err:
+            raise HomeAssistantError(
+                "EZVIZ cloud custom command failed after transmission; BLE was not "
+                f"retried because the cloud outcome is ambiguous: {err}"
+            ) from err
+        await self.coordinator.async_request_refresh()

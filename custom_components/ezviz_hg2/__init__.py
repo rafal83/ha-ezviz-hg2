@@ -13,8 +13,10 @@ from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
 
 from .api import EzvizHg2Api
+from .ble import EzvizHg2BleController
 from .const import (
     ATTR_ACTION_ID,
+    ATTR_COMMAND,
     ATTR_CONFIG_ENTRY_ID,
     ATTR_DOMAIN_ID,
     ATTR_FILTER,
@@ -22,8 +24,13 @@ from .const import (
     ATTR_PAYLOAD,
     ATTR_RESOURCE_ID,
     ATTR_SERIAL,
+    CONF_BLE_ADDRESS,
+    CONF_BLE_FALLBACK_ENABLED,
+    CONF_BLE_SERIAL,
+    CONF_BLE_VERIFY_CODE,
     CONF_RFSESSION_ID,
     CONF_SESSION_ID,
+    DEFAULT_BLE_TIMEOUT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -31,6 +38,7 @@ from .const import (
     SERVICE_GET_CLOUD_METADATA,
     SERVICE_GET_IOT_FEATURE,
     SERVICE_GET_MANUAL_SCENES,
+    SERVICE_SEND_BLE_COMMAND,
 )
 from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
 
@@ -70,6 +78,15 @@ MANUAL_SCENES_SERVICE_SCHEMA = vol.Schema(
     {vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string}
 )
 
+BLE_COMMAND_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
+        # Kept as a hidden optional field for existing YAML automations.
+        vol.Optional(ATTR_SERIAL): cv.string,
+        vol.Required(ATTR_COMMAND): vol.In(("open", "close", "pause")),
+    }
+)
+
 
 async def _async_update_listener(
     hass: HomeAssistant, entry: EzvizHg2ConfigEntry
@@ -89,7 +106,26 @@ async def async_setup_entry(
     }
     api = EzvizHg2Api(token, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    coordinator = EzvizHg2Coordinator(hass, entry, api, scan_interval)
+    ble_controller = None
+    if entry.options.get(CONF_BLE_FALLBACK_ENABLED, False):
+        ble_serial = str(entry.options.get(CONF_BLE_SERIAL, "")).strip()
+        ble_verify_code = str(
+            entry.options.get(CONF_BLE_VERIFY_CODE, "")
+        ).strip()
+        if ble_serial and len(ble_verify_code) == 6:
+            ble_controller = EzvizHg2BleController(
+                hass,
+                ble_serial,
+                ble_verify_code,
+                str(entry.options.get(CONF_BLE_ADDRESS, "")).strip() or None,
+                min(
+                    float(entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)),
+                    DEFAULT_BLE_TIMEOUT,
+                ),
+            )
+    coordinator = EzvizHg2Coordinator(
+        hass, entry, api, scan_interval, ble_controller
+    )
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -224,6 +260,45 @@ async def async_setup_entry(
             supports_response=SupportsResponse.ONLY,
         )
 
+    if not hass.services.has_service(DOMAIN, SERVICE_SEND_BLE_COMMAND):
+        async def async_send_ble_command(call: ServiceCall) -> None:
+            config_entry = hass.config_entries.async_get_entry(
+                call.data[ATTR_CONFIG_ENTRY_ID]
+            )
+            if config_entry is None or config_entry.domain != DOMAIN:
+                raise HomeAssistantError("Unknown EZVIZ HG2 config entry")
+            runtime = config_entry.runtime_data
+            if not isinstance(runtime, EzvizHg2Coordinator):
+                raise HomeAssistantError("EZVIZ HG2 config entry is not loaded")
+            controller = runtime.ble_controller
+            if controller is None:
+                raise HomeAssistantError(
+                    "BLE fallback is not configured for this EZVIZ HG2 entry"
+                )
+            requested_serial = call.data.get(ATTR_SERIAL)
+            if (
+                requested_serial is not None
+                and requested_serial.upper() != controller.serial
+            ):
+                raise HomeAssistantError(
+                    "The supplied serial does not match the HG2 configured "
+                    "for this entry"
+                )
+            try:
+                command = call.data[ATTR_COMMAND]
+                await controller.async_send(command)
+            except Exception as err:
+                raise HomeAssistantError(
+                    f"EZVIZ HG2 BLE command failed: {err}"
+                ) from err
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SEND_BLE_COMMAND,
+            async_send_ble_command,
+            schema=BLE_COMMAND_SERVICE_SCHEMA,
+        )
+
     return True
 
 
@@ -240,4 +315,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_remove(DOMAIN, SERVICE_GET_IOT_FEATURE)
         hass.services.async_remove(DOMAIN, SERVICE_GET_CLOUD_METADATA)
         hass.services.async_remove(DOMAIN, SERVICE_GET_MANUAL_SCENES)
+        hass.services.async_remove(DOMAIN, SERVICE_SEND_BLE_COMMAND)
     return unloaded

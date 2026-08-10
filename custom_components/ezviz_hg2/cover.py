@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import logging
 from time import monotonic
 from typing import Any
 
@@ -19,8 +20,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import EzvizActionRejected
 from .const import CONF_CLOSE_DURATION, CONF_OPEN_DURATION, DOMAIN
 from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 ACTION_DOMAIN = "RemoteControlDoor"
 ACTION_ID = "RemoteControlDoor"
@@ -71,6 +75,11 @@ def _door_status(device: dict[str, Any]) -> int | None:
         return None
     value = values[0]
     return value if isinstance(value, int) else None
+
+
+def _is_cloud_offline(device: dict[str, Any]) -> bool:
+    """Return whether EZVIZ explicitly reports this device offline."""
+    return _device_info(device).get("status") == 0
 
 
 def _eased_fraction(fraction: float) -> float:
@@ -153,11 +162,11 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
     @property
     def available(self) -> bool:
         device = self.coordinator.data.get(self._serial)
-        return (
-            super().available
-            and isinstance(device, dict)
-            and _route(device) is not None
-        )
+        if not isinstance(device, dict):
+            return False
+        ble = self.coordinator.ble_controller
+        ble_configured = ble is not None and ble.matches(self._serial)
+        return ble_configured or (super().available and _route(device) is not None)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -271,8 +280,34 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         self, command: str, position: int | None = None
     ) -> None:
         device = self.coordinator.data[self._serial]
+        ble = self.coordinator.ble_controller
+        ble_configured = ble is not None and ble.matches(self._serial)
         route = _route(device)
+        if ble_configured and (
+            _is_cloud_offline(device)
+            or not self.coordinator.last_update_success
+        ):
+            _LOGGER.info(
+                "Cloud is unavailable for HG2 %s; sending %s through authenticated BLE",
+                self._serial,
+                command,
+            )
+            try:
+                await ble.async_send(command)
+            except Exception as err:
+                raise HomeAssistantError(
+                    f"EZVIZ HG2 BLE fallback failed: {err}"
+                ) from err
+            return
         if route is None:
+            if ble_configured:
+                try:
+                    await ble.async_send(command)
+                except Exception as err:
+                    raise HomeAssistantError(
+                        f"EZVIZ HG2 BLE fallback failed: {err}"
+                    ) from err
+                return
             raise HomeAssistantError("EZVIZ HG2 resource route is unavailable")
         payload: dict[str, Any] = {"controlDoorCmd": command}
         if position is not None:
@@ -287,8 +322,29 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
                 ACTION_ID,
                 payload,
             )
+        except EzvizActionRejected as err:
+            if not ble_configured:
+                raise HomeAssistantError(
+                    f"EZVIZ rejected the gate command: {err}"
+                ) from err
+            _LOGGER.info(
+                "Cloud explicitly rejected %s for HG2 %s; using authenticated BLE",
+                command,
+                self._serial,
+            )
+            try:
+                await ble.async_send(command)
+            except Exception as ble_err:
+                raise HomeAssistantError(
+                    "EZVIZ cloud rejected the command and BLE fallback failed: "
+                    f"{ble_err}"
+                ) from ble_err
+            return
         except Exception as err:
-            raise HomeAssistantError(f"EZVIZ rejected the gate command: {err}") from err
+            raise HomeAssistantError(
+                "EZVIZ cloud command failed after transmission; BLE was not retried "
+                f"because the cloud outcome is ambiguous: {err}"
+            ) from err
         await self.coordinator.async_request_refresh()
 
     async def async_open_cover(self, **kwargs: Any) -> None:

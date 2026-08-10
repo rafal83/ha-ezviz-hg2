@@ -34,14 +34,22 @@
   "options": {
     "step": {
       "init": {
-        "title": "Sondage du statut de la porte",
-        "description": "Fréquence, en secondes, d’interrogation du cloud EZVIZ pour le statut de la porte, et le temps de course complet du portail utilisé pour estimer sa position (le cloud ne renvoie que fermé ou pas fermé).",
+        "title": "Portail et fallback BLE optionnel",
+        "description": "Configure le sondage cloud, les temps de course et le contrôle BLE local authentifié facultatif. Lorsqu'il est activé, le BLE est utilisé si EZVIZ signale le HG2 hors ligne, si le dernier rafraîchissement cloud a échoué ou si le cloud refuse explicitement une commande. L'adresse BLE est facultative si Home Assistant retrouve le numéro de série.",
         "data": {
           "scan_interval": "Intervalle de sondage",
+          "ble_fallback_enabled": "Activer le fallback BLE",
+          "ble_serial": "Numéro de série du HG2",
+          "ble_address": "Adresse BLE (facultative)",
+          "ble_verify_code": "Code de vérification à six caractères",
           "open_duration": "Temps de course en ouverture (secondes)",
           "close_duration": "Temps de course en fermeture (secondes)"
         }
       }
+    },
+    "error": {
+      "ble_serial_required": "Sélectionnez le HG2 qui doit utiliser le BLE",
+      "ble_verify_code_invalid": "Le code de vérification doit contenir exactement six caractères"
     }
   },
   "entity": {
@@ -59,6 +67,9 @@
       },
       "reset_travel_duration": {
           "name": "Réinitialiser la calibration"
+      },
+      "custom_open": {
+          "name": "Ouverture personnalisée"
       }
     }
   }

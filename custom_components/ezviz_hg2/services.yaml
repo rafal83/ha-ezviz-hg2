@@ -95,9 +95,11 @@ get_cloud_metadata:
       required: false
       selector:
         text:
-get_manual_scenes:
-  name: Lire les scènes manuelles
-  description: Lit les scènes manuelles EZVIZ sans les exécuter.
+send_ble_command:
+  name: Envoyer une commande BLE
+  description: >-
+    Envoie directement une commande locale authentifiée au HG2 sans essayer
+    le cloud. Le HG2 est celui configuré dans l'entrée sélectionnée.
   fields:
     config_entry_id:
       name: Entrée de configuration
@@ -105,3 +107,12 @@ get_manual_scenes:
       selector:
         config_entry:
           integration: ezviz_hg2
+    command:
+      name: Commande
+      required: true
+      selector:
+        select:
+          options:
+            - open
+            - close
+            - pause

@@ -22,6 +22,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import EzvizHg2Api
+from .ble import EzvizHg2BleController
 from .const import DOMAIN, FULL_REFRESH_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -81,8 +82,10 @@ class EzvizHg2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: EzvizHg2ConfigEntry,
         api: EzvizHg2Api,
         scan_interval: int,
+        ble_controller: EzvizHg2BleController | None = None,
     ) -> None:
         self.api = api
+        self.ble_controller = ble_controller
         self.all_devices: dict[str, Any] = {}
         self._last_full_refresh = 0.0
         super().__init__(

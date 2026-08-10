@@ -4,10 +4,11 @@
   "codeowners": ["@rafal83"],
   "config_flow": true,
   "documentation": "https://github.com/rafal83/ha-ezviz-hg2",
+  "dependencies": ["bluetooth"],
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/rafal83/ha-ezviz-hg2/issues",
-  "loggers": ["pyezvizapi"],
+  "loggers": ["bleak_retry_connector", "pyezvizapi"],
   "requirements": ["pyezvizapi==1.0.0.7"],
-  "version": "0.2.6"
+  "version": "0.3.3"
 }
