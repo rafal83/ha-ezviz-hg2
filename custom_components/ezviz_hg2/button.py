@@ -7,7 +7,7 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -21,53 +21,18 @@ from .const import (
     DOMAIN,
     MAX_TRAVEL_DURATION,
     MIN_TRAVEL_DURATION,
+    SUBENTRY_TYPE_GATE,
 )
 from .coordinator import EzvizHg2Coordinator
+from .device import (
+    get_device_info as _device_info,
+    get_door_status as _door_status,
+    resolve_gate_route,
+)
 from .entity import EzvizFeatureEntity, FeatureDefinition, device_info, device_model
 
-DOOR_ACTION_DOMAIN = "RemoteControlDoor"
-DOOR_ACTION_ID = "RemoteControlDoor"
 CALIBRATION_OPEN_SETTLE = 45
 CALIBRATION_TIMEOUT = MAX_TRAVEL_DURATION + 30
-
-
-def _route(device: dict[str, Any]) -> tuple[str, str] | None:
-    resources = device.get("resourceInfos")
-    if not isinstance(resources, list):
-        return None
-    for resource in resources:
-        if not isinstance(resource, dict) or not resource.get("resourceId"):
-            continue
-        return str(resource["resourceId"]), str(resource.get("localIndex", "0"))
-    return None
-
-
-def _door_status(device: dict[str, Any]) -> int | None:
-    feature_info = device.get("FEATURE_INFO")
-    if not isinstance(feature_info, dict):
-        return None
-    index = feature_info.get("0", feature_info.get(0))
-    if not isinstance(index, dict):
-        return None
-    global_resource = index.get("global")
-    if not isinstance(global_resource, dict):
-        return None
-    door = global_resource.get("Door")
-    if not isinstance(door, dict):
-        return None
-    status = door.get("DoorStatus")
-    if not isinstance(status, dict):
-        return None
-    values = status.get("doorStatus")
-    if not isinstance(values, list) or not values:
-        return None
-    value = values[0]
-    return value if isinstance(value, int) else None
-
-
-def _device_info(device: dict[str, Any]) -> dict[str, Any]:
-    info = device.get("deviceInfos")
-    return info if isinstance(info, dict) else {}
 
 
 def _custom_open_mode(device: dict[str, Any]) -> int | None:
@@ -120,18 +85,25 @@ async def async_setup_entry(
         EzvizTravelCalibrationButton(coordinator, entry, serial, CALIBRATION)
         for serial in hg2_serials
     )
-    async_add_entities(
-        EzvizTravelDurationCalibrationButton(coordinator, entry, serial)
-        for serial in hg2_serials
+
+    # These three act on (and, for calibration, write back) a specific
+    # gate's own travel duration, which lives in that gate's "gate" config
+    # subentry (see config_flow.py). A single async_add_entities call only
+    # accepts one subentry id, so entities are grouped and added per
+    # subentry instead of all at once.
+    gate_button_classes = (
+        EzvizTravelDurationCalibrationButton,
+        EzvizTravelDurationResetButton,
+        EzvizCustomOpenButton,
     )
-    async_add_entities(
-        EzvizTravelDurationResetButton(coordinator, entry, serial)
-        for serial in hg2_serials
-    )
-    async_add_entities(
-        EzvizCustomOpenButton(coordinator, entry, serial)
-        for serial in hg2_serials
-    )
+    by_subentry: dict[str | None, list[_EzvizGateButton]] = {}
+    for serial in hg2_serials:
+        subentry_id = coordinator.gate_subentry_id(serial)
+        by_subentry.setdefault(subentry_id, []).extend(
+            button_cls(coordinator, entry, serial) for button_cls in gate_button_classes
+        )
+    for subentry_id, buttons in by_subentry.items():
+        async_add_entities(buttons, config_subentry_id=subentry_id)
 
 
 class EzvizTravelCalibrationButton(EzvizFeatureEntity, ButtonEntity):
@@ -181,6 +153,31 @@ class _EzvizGateButton(CoordinatorEntity[EzvizHg2Coordinator], ButtonEntity):
             serial_number=self._serial,
         )
 
+    def _async_update_gate_settings(self, data_updates: dict[str, Any]) -> None:
+        """Merge ``data_updates`` into this gate's own config subentry.
+
+        Creates the subentry (with just these fields) if the gate does not
+        have one yet, e.g. the very first automatic calibration on a gate
+        nobody has configured BLE or a manual duration for.
+        """
+        entry = self._entry
+        subentry_id = self.coordinator.gate_subentry_id(self._serial)
+        if subentry_id is not None:
+            self.hass.config_entries.async_update_subentry(
+                entry, entry.subentries[subentry_id], data_updates=data_updates
+            )
+            return
+        info = device_info(self.coordinator.data[self._serial])
+        self.hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=data_updates,
+                subentry_type=SUBENTRY_TYPE_GATE,
+                title=str(info.get("name") or self._serial),
+                unique_id=self._serial,
+            ),
+        )
+
 
 class EzvizTravelDurationCalibrationButton(_EzvizGateButton):
     """Time a full close cycle and use it for both cover travel directions.
@@ -202,17 +199,17 @@ class EzvizTravelDurationCalibrationButton(_EzvizGateButton):
 
     async def _async_send_door_command(self, command: str) -> None:
         device = self.coordinator.data[self._serial]
-        route = _route(device)
+        route = resolve_gate_route(device)
         if route is None:
             raise HomeAssistantError("EZVIZ HG2 resource route is unavailable")
         try:
             await self.hass.async_add_executor_job(
                 self.coordinator.api.send_iot_action,
                 self._serial,
-                "global",
-                route[1],
-                DOOR_ACTION_DOMAIN,
-                DOOR_ACTION_ID,
+                route.resource_id,
+                route.local_index,
+                route.action_domain,
+                route.action_id,
                 {"controlDoorCmd": command},
             )
         except Exception as err:
@@ -242,13 +239,8 @@ class EzvizTravelDurationCalibrationButton(_EzvizGateButton):
             MAX_TRAVEL_DURATION,
             max(MIN_TRAVEL_DURATION, round(monotonic() - start)),
         )
-        self.hass.config_entries.async_update_entry(
-            self._entry,
-            options={
-                **self._entry.options,
-                CONF_OPEN_DURATION: duration,
-                CONF_CLOSE_DURATION: duration,
-            },
+        self._async_update_gate_settings(
+            {CONF_OPEN_DURATION: duration, CONF_CLOSE_DURATION: duration}
         )
 
 
@@ -268,10 +260,16 @@ class EzvizTravelDurationResetButton(_EzvizGateButton):
         self._attr_unique_id = f"{serial}_reset_travel_duration"
 
     async def async_press(self) -> None:
-        options = dict(self._entry.options)
-        options.pop(CONF_OPEN_DURATION, None)
-        options.pop(CONF_CLOSE_DURATION, None)
-        self.hass.config_entries.async_update_entry(self._entry, options=options)
+        subentry_id = self.coordinator.gate_subentry_id(self._serial)
+        if subentry_id is None:
+            return
+        subentry = self._entry.subentries[subentry_id]
+        data = dict(subentry.data)
+        data.pop(CONF_OPEN_DURATION, None)
+        data.pop(CONF_CLOSE_DURATION, None)
+        self.hass.config_entries.async_update_subentry(
+            self._entry, subentry, data=data
+        )
 
 
 class EzvizCustomOpenButton(_EzvizGateButton):
@@ -295,7 +293,7 @@ class EzvizCustomOpenButton(_EzvizGateButton):
             isinstance(device, dict)
             and super().available
             and _device_info(device).get("status") != 0
-            and _route(device) is not None
+            and resolve_gate_route(device) is not None
         )
 
     async def async_press(self) -> None:
@@ -305,7 +303,7 @@ class EzvizCustomOpenButton(_EzvizGateButton):
             raise HomeAssistantError(
                 "Configure a custom opening distance before using this button"
             )
-        route = _route(device)
+        route = resolve_gate_route(device)
         if route is None:
             raise HomeAssistantError("EZVIZ HG2 resource route is unavailable")
 
@@ -313,10 +311,10 @@ class EzvizCustomOpenButton(_EzvizGateButton):
             await self.hass.async_add_executor_job(
                 self.coordinator.api.send_iot_action,
                 self._serial,
-                "global",
-                route[1],
-                DOOR_ACTION_DOMAIN,
-                DOOR_ACTION_ID,
+                route.resource_id,
+                route.local_index,
+                route.action_domain,
+                route.action_id,
                 {"controlDoorCmd": "custom"},
             )
         except Exception as err:

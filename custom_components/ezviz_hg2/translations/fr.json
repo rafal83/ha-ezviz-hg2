@@ -34,22 +34,53 @@
   "options": {
     "step": {
       "init": {
-        "title": "Portail et fallback BLE optionnel",
-        "description": "Configure le sondage cloud, les temps de course et le contrôle BLE local authentifié facultatif. Lorsqu'il est activé, le BLE est utilisé si EZVIZ signale le HG2 hors ligne, si le dernier rafraîchissement cloud a échoué ou si le cloud refuse explicitement une commande. L'adresse BLE est facultative si Home Assistant retrouve le numéro de série.",
+        "title": "Sondage cloud",
+        "description": "Configure la fréquence à laquelle Home Assistant interroge le cloud EZVIZ pour ce compte. Le temps de course et le fallback BLE facultatif de chaque portail se configurent sur le portail lui-même (sa page d'appareil), pas ici : plusieurs portails sur le même compte ne partagent donc pas les mêmes réglages.",
         "data": {
-          "scan_interval": "Intervalle de sondage",
-          "ble_fallback_enabled": "Activer le fallback BLE",
-          "ble_serial": "Numéro de série du HG2",
-          "ble_address": "Adresse BLE (facultative)",
-          "ble_verify_code": "Code de vérification à six caractères",
-          "open_duration": "Temps de course en ouverture (secondes)",
-          "close_duration": "Temps de course en fermeture (secondes)"
+          "scan_interval": "Intervalle de sondage"
         }
       }
-    },
-    "error": {
-      "ble_serial_required": "Sélectionnez le HG2 qui doit utiliser le BLE",
-      "ble_verify_code_invalid": "Le code de vérification doit contenir exactement six caractères"
+    }
+  },
+  "config_subentries": {
+    "gate": {
+      "entry_type": "Portail",
+      "initiate_flow": {
+        "user": "Ajouter un portail",
+        "reconfigure": "Reconfigurer le portail"
+      },
+      "step": {
+        "user": {
+          "title": "Configurer un portail",
+          "description": "Définit le temps de course propre à ce HG2 et le contrôle BLE local authentifié facultatif. Lorsqu'il est activé, le BLE est utilisé si EZVIZ signale ce HG2 hors ligne, si le dernier rafraîchissement cloud a échoué ou si le cloud refuse explicitement une commande. L'adresse BLE est facultative si Home Assistant retrouve le numéro de série.",
+          "data": {
+            "serial": "Portail HG2",
+            "open_duration": "Temps de course en ouverture (secondes)",
+            "close_duration": "Temps de course en fermeture (secondes)",
+            "ble_fallback_enabled": "Activer le fallback BLE",
+            "ble_address": "Adresse BLE (facultative)",
+            "ble_verify_code": "Code de vérification à six caractères"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigurer ce portail",
+          "description": "Définit le temps de course propre à ce HG2 et le contrôle BLE local authentifié facultatif.",
+          "data": {
+            "open_duration": "Temps de course en ouverture (secondes)",
+            "close_duration": "Temps de course en fermeture (secondes)",
+            "ble_fallback_enabled": "Activer le fallback BLE",
+            "ble_address": "Adresse BLE (facultative)",
+            "ble_verify_code": "Code de vérification à six caractères"
+          }
+        }
+      },
+      "abort": {
+        "no_gates_available": "Tous les portails HG2 détectés sur ce compte sont déjà configurés",
+        "reconfigure_successful": "Réglages du portail mis à jour"
+      },
+      "error": {
+        "ble_verify_code_invalid": "Le code de vérification doit contenir exactement six caractères"
+      }
     }
   },
   "entity": {

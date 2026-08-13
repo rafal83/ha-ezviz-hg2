@@ -19,11 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import EzvizHg2Coordinator
-
-
-def _info(device: dict[str, Any]) -> dict[str, Any]:
-    info = device.get("deviceInfos")
-    return info if isinstance(info, dict) else {}
+from .device import get_device_info as _info
 
 
 def _feature_paths(value: Any, prefix: str = "") -> list[str]:

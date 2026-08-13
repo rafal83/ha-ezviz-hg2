@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import EzvizHg2Coordinator
+from .device import device_model, get_device_info as device_info
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -30,22 +31,6 @@ class FeatureDefinition:
     value_path: tuple[str, ...] = ()
     icon: str | None = None
     enabled_default: bool = True
-
-
-def device_info(device: dict[str, Any]) -> dict[str, Any]:
-    """Return the device information mapping."""
-    info = device.get("deviceInfos")
-    return info if isinstance(info, dict) else {}
-
-
-def device_model(device: dict[str, Any]) -> str:
-    """Return the normalized HG2 or CH3 model."""
-    info = device_info(device)
-    text = " ".join(
-        str(info.get(key, ""))
-        for key in ("model", "deviceSubCategory", "productName", "deviceType")
-    ).upper()
-    return "HG2" if "HG2" in text else "CH3" if "CH3" in text else ""
 
 
 def feature_root(device: dict[str, Any], definition: FeatureDefinition) -> Any:

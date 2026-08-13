@@ -1,0 +1,16 @@
+# Test dependencies for `pytest` (see tests/).
+#
+# On Linux/macOS, `pip install -r requirements-test.txt` should resolve
+# cleanly. On native Windows, installing the full `homeassistant` package
+# currently requires extra manual steps (a pinned `lru-dict` version with no
+# Windows wheel for recent CPython, plus POSIX-only stdlib modules such as
+# `fcntl`/`resource` imported unconditionally by `homeassistant.runner`) —
+# see the refactor notes for the workarounds used to develop this suite.
+# WSL, a devcontainer, or CI on Linux avoids all of this.
+pytest
+pytest-asyncio
+homeassistant
+pyezvizapi==1.0.0.7
+bleak
+bleak-retry-connector
+cryptography

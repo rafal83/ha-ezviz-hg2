@@ -26,7 +26,6 @@ from .const import (
     ATTR_SERIAL,
     CONF_BLE_ADDRESS,
     CONF_BLE_FALLBACK_ENABLED,
-    CONF_BLE_SERIAL,
     CONF_BLE_VERIFY_CODE,
     CONF_RFSESSION_ID,
     CONF_SESSION_ID,
@@ -39,6 +38,7 @@ from .const import (
     SERVICE_GET_IOT_FEATURE,
     SERVICE_GET_MANUAL_SCENES,
     SERVICE_SEND_BLE_COMMAND,
+    SUBENTRY_TYPE_GATE,
 )
 from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
 
@@ -106,25 +106,27 @@ async def async_setup_entry(
     }
     api = EzvizHg2Api(token, entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    ble_controller = None
-    if entry.options.get(CONF_BLE_FALLBACK_ENABLED, False):
-        ble_serial = str(entry.options.get(CONF_BLE_SERIAL, "")).strip()
-        ble_verify_code = str(
-            entry.options.get(CONF_BLE_VERIFY_CODE, "")
-        ).strip()
-        if ble_serial and len(ble_verify_code) == 6:
-            ble_controller = EzvizHg2BleController(
-                hass,
-                ble_serial,
-                ble_verify_code,
-                str(entry.options.get(CONF_BLE_ADDRESS, "")).strip() or None,
-                min(
-                    float(entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)),
-                    DEFAULT_BLE_TIMEOUT,
-                ),
-            )
+    ble_controllers: dict[str, EzvizHg2BleController] = {}
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_TYPE_GATE or not subentry.unique_id:
+            continue
+        if not subentry.data.get(CONF_BLE_FALLBACK_ENABLED, False):
+            continue
+        ble_verify_code = str(subentry.data.get(CONF_BLE_VERIFY_CODE, "")).strip()
+        if len(ble_verify_code) != 6:
+            continue
+        ble_controllers[subentry.unique_id] = EzvizHg2BleController(
+            hass,
+            subentry.unique_id,
+            ble_verify_code,
+            str(subentry.data.get(CONF_BLE_ADDRESS, "")).strip() or None,
+            min(
+                float(entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)),
+                DEFAULT_BLE_TIMEOUT,
+            ),
+        )
     coordinator = EzvizHg2Coordinator(
-        hass, entry, api, scan_interval, ble_controller
+        hass, entry, api, scan_interval, ble_controllers
     )
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
@@ -270,19 +272,24 @@ async def async_setup_entry(
             runtime = config_entry.runtime_data
             if not isinstance(runtime, EzvizHg2Coordinator):
                 raise HomeAssistantError("EZVIZ HG2 config entry is not loaded")
-            controller = runtime.ble_controller
-            if controller is None:
+            if not runtime.ble_controllers:
                 raise HomeAssistantError(
-                    "BLE fallback is not configured for this EZVIZ HG2 entry"
+                    "BLE fallback is not configured for any HG2 on this entry"
                 )
             requested_serial = call.data.get(ATTR_SERIAL)
-            if (
-                requested_serial is not None
-                and requested_serial.upper() != controller.serial
-            ):
+            if requested_serial is not None:
+                controller = runtime.ble_controllers.get(requested_serial.upper())
+                if controller is None:
+                    raise HomeAssistantError(
+                        "The supplied serial has no BLE fallback configured "
+                        "for this entry"
+                    )
+            elif len(runtime.ble_controllers) == 1:
+                controller = next(iter(runtime.ble_controllers.values()))
+            else:
                 raise HomeAssistantError(
-                    "The supplied serial does not match the HG2 configured "
-                    "for this entry"
+                    "Several HG2 gates have BLE fallback configured on this "
+                    "entry; specify which one with 'serial'"
                 )
             try:
                 command = call.data[ATTR_COMMAND]

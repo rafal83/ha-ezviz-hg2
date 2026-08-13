@@ -20,85 +20,21 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import EzvizActionRejected
+from .api import should_fallback_to_ble
 from .const import CONF_CLOSE_DURATION, CONF_OPEN_DURATION, DOMAIN
 from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
+from .device import (
+    CommandRoute,
+    decide_command_route,
+    get_device_info,
+    get_door_status,
+    get_hg2_capabilities,
+    is_cloud_offline,
+    resolve_gate_route,
+)
+from .travel import MovementEstimator, inverse_eased_fraction
 
 _LOGGER = logging.getLogger(__name__)
-
-ACTION_DOMAIN = "RemoteControlDoor"
-ACTION_ID = "RemoteControlDoor"
-
-
-def _device_info(device: dict[str, Any]) -> dict[str, Any]:
-    info = device.get("deviceInfos")
-    return info if isinstance(info, dict) else {}
-
-
-def _is_hg2(device: dict[str, Any]) -> bool:
-    info = _device_info(device)
-    return "HG2" in " ".join(
-        str(info.get(key, ""))
-        for key in ("model", "deviceSubCategory", "productName", "deviceType")
-    ).upper()
-
-
-def _route(device: dict[str, Any]) -> tuple[str, str] | None:
-    resources = device.get("resourceInfos")
-    if not isinstance(resources, list):
-        return None
-    for resource in resources:
-        if not isinstance(resource, dict) or not resource.get("resourceId"):
-            continue
-        return str(resource["resourceId"]), str(resource.get("localIndex", "0"))
-    return None
-
-
-def _door_status(device: dict[str, Any]) -> int | None:
-    feature_info = device.get("FEATURE_INFO")
-    if not isinstance(feature_info, dict):
-        return None
-    index = feature_info.get("0", feature_info.get(0))
-    if not isinstance(index, dict):
-        return None
-    global_resource = index.get("global")
-    if not isinstance(global_resource, dict):
-        return None
-    door = global_resource.get("Door")
-    if not isinstance(door, dict):
-        return None
-    status = door.get("DoorStatus")
-    if not isinstance(status, dict):
-        return None
-    values = status.get("doorStatus")
-    if not isinstance(values, list) or not values:
-        return None
-    value = values[0]
-    return value if isinstance(value, int) else None
-
-
-def _is_cloud_offline(device: dict[str, Any]) -> bool:
-    """Return whether EZVIZ explicitly reports this device offline."""
-    return _device_info(device).get("status") == 0
-
-
-def _eased_fraction(fraction: float) -> float:
-    """Smoothstep 0..1: slow at both ends, matching the gate motor's ramp."""
-    fraction = min(1.0, max(0.0, fraction))
-    return fraction * fraction * (3 - 2 * fraction)
-
-
-def _inverse_eased_fraction(target_fraction: float) -> float:
-    """Invert the smoothstep easing via Newton's method."""
-    target_fraction = min(1.0, max(0.0, target_fraction))
-    guess = target_fraction
-    for _ in range(20):
-        value = guess * guess * (3 - 2 * guess) - target_fraction
-        slope = 6 * guess * (1 - guess)
-        if abs(slope) < 1e-9:
-            break
-        guess = min(1.0, max(0.0, guess - value / slope))
-    return guess
 
 
 async def async_setup_entry(
@@ -106,15 +42,27 @@ async def async_setup_entry(
     entry: EzvizHg2ConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up covers for discovered HG2 devices."""
+    """Set up covers for discovered HG2 devices.
+
+    Each gate's travel duration lives in its own "gate" config subentry
+    (see config_flow.py), so entities are grouped and added per subentry —
+    a single ``async_add_entities`` call only accepts one subentry id.
+    """
     coordinator = entry.runtime_data
-    open_duration = entry.options.get(CONF_OPEN_DURATION)
-    close_duration = entry.options.get(CONF_CLOSE_DURATION)
-    async_add_entities(
-        EzvizHg2Cover(coordinator, serial, open_duration, close_duration)
-        for serial, device in coordinator.data.items()
-        if isinstance(device, dict) and _is_hg2(device)
-    )
+    by_subentry: dict[str | None, list[EzvizHg2Cover]] = {}
+    for serial, device in coordinator.data.items():
+        if not isinstance(device, dict) or not get_hg2_capabilities(device).gate_control:
+            continue
+        settings = coordinator.gate_settings(serial)
+        cover = EzvizHg2Cover(
+            coordinator,
+            serial,
+            settings.get(CONF_OPEN_DURATION),
+            settings.get(CONF_CLOSE_DURATION),
+        )
+        by_subentry.setdefault(coordinator.gate_subentry_id(serial), []).append(cover)
+    for subentry_id, covers in by_subentry.items():
+        async_add_entities(covers, config_subentry_id=subentry_id)
 
 
 class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
@@ -137,11 +85,7 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         self._attr_unique_id = f"{serial}_gate"
         self._open_duration = open_duration
         self._close_duration = close_duration
-        self._position: float | None = None
-        self._movement_start: float | None = None
-        self._movement_start_position: float | None = None
-        self._movement_target: float | None = None
-        self._movement_duration: float | None = None
+        self._movement = MovementEstimator()
         self._auto_stop_unsub: Callable[[], None] | None = None
 
     @property
@@ -159,18 +103,28 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
             features |= CoverEntityFeature.SET_POSITION
         return features
 
+    def _gate_status_fresh(self) -> bool:
+        """Return whether the last DoorStatus poll for this HG2 succeeded.
+
+        Missing freshness data (no poll attempted yet) is treated as fresh
+        so a brand-new device is not immediately reported as stale.
+        """
+        freshness = self.coordinator.gate_status_freshness.get(self._serial)
+        return freshness is None or freshness.available
+
     @property
     def available(self) -> bool:
         device = self.coordinator.data.get(self._serial)
         if not isinstance(device, dict):
             return False
-        ble = self.coordinator.ble_controller
-        ble_configured = ble is not None and ble.matches(self._serial)
-        return ble_configured or (super().available and _route(device) is not None)
+        cloud_available = super().available and resolve_gate_route(device) is not None
+        ble = self.coordinator.ble_controllers.get(self._serial)
+        ble_available = ble is not None and ble.is_present()
+        return cloud_available or ble_available
 
     @property
     def device_info(self) -> DeviceInfo:
-        info = _device_info(self.coordinator.data[self._serial])
+        info = get_device_info(self.coordinator.data[self._serial])
         return DeviceInfo(
             identifiers={(DOMAIN, self._serial)},
             name=str(info.get("name") or "EZVIZ HG2"),
@@ -182,7 +136,10 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
     @property
     def is_closed(self) -> bool | None:
-        status = _door_status(self.coordinator.data[self._serial])
+        device = self.coordinator.data.get(self._serial)
+        if not isinstance(device, dict) or not self._gate_status_fresh():
+            return None
+        status = get_door_status(device)
         if status == 0:
             return True
         if status == 1:
@@ -191,13 +148,13 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
     @property
     def is_opening(self) -> bool:
-        self._estimated_position()
-        return self._movement_target == 100.0
+        self._movement.position_at(monotonic())
+        return self._movement.target == 100.0
 
     @property
     def is_closing(self) -> bool:
-        self._estimated_position()
-        return self._movement_target == 0.0
+        self._movement.position_at(monotonic())
+        return self._movement.target == 0.0
 
     @property
     def current_cover_position(self) -> int | None:
@@ -209,27 +166,8 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         """
         if not self._calibrated:
             return None
-        position = self._estimated_position()
+        position = self._movement.position_at(monotonic())
         return None if position is None else round(position)
-
-    def _estimated_position(self) -> float | None:
-        if self._movement_start is None or not self._movement_duration:
-            return self._position
-        elapsed = monotonic() - self._movement_start
-        fraction = _eased_fraction(elapsed / self._movement_duration)
-        if fraction >= 1.0:
-            self._position = self._movement_target
-            self._clear_movement()
-            return self._position
-        return self._movement_start_position + fraction * (
-            self._movement_target - self._movement_start_position
-        )
-
-    def _clear_movement(self) -> None:
-        self._movement_start = None
-        self._movement_start_position = None
-        self._movement_target = None
-        self._movement_duration = None
 
     def _cancel_auto_stop(self) -> None:
         if self._auto_stop_unsub is not None:
@@ -245,31 +183,20 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
         self._auto_stop_unsub = async_call_later(self.hass, delay, _auto_stop)
 
-    def _start_movement(self, target: float, duration: float | None) -> None:
-        if duration is None:
-            return
-        current = self._estimated_position()
-        if current is None:
-            current = 0.0 if target == 100.0 else 100.0
-        self._position = current
-        self._movement_start = monotonic()
-        self._movement_start_position = current
-        self._movement_target = target
-        self._movement_duration = duration
-
     def _handle_coordinator_update(self) -> None:
         device = self.coordinator.data.get(self._serial)
-        status = _door_status(device) if isinstance(device, dict) else None
+        status = (
+            get_door_status(device)
+            if isinstance(device, dict) and self._gate_status_fresh()
+            else None
+        )
         if status == 0:
-            self._position = 0.0
-            self._clear_movement()
-        elif (
-            status == 1
-            and self._calibrated
-            and self._position is None
-            and self._movement_start is None
-        ):
-            self._position = 100.0
+            self._movement.position = 0.0
+            self._movement.clear()
+        # status == 1 only means "not closed": EZVIZ never reports a real
+        # percentage. Without an in-progress movement estimate there is no
+        # way to know whether the gate is at 10% or 90%, so the position is
+        # deliberately left unknown (None) rather than assumed to be 100%.
         super()._handle_coordinator_update()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -280,13 +207,16 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         self, command: str, position: int | None = None
     ) -> None:
         device = self.coordinator.data[self._serial]
-        ble = self.coordinator.ble_controller
-        ble_configured = ble is not None and ble.matches(self._serial)
-        route = _route(device)
-        if ble_configured and (
-            _is_cloud_offline(device)
-            or not self.coordinator.last_update_success
-        ):
+        ble = self.coordinator.ble_controllers.get(self._serial)
+        ble_configured = ble is not None
+        route = resolve_gate_route(device)
+        command_route = decide_command_route(
+            ble_configured=ble_configured,
+            cloud_offline=is_cloud_offline(device),
+            last_update_success=self.coordinator.last_update_success,
+            has_route=route is not None,
+        )
+        if command_route == CommandRoute.BLE_CLOUD_OFFLINE:
             _LOGGER.info(
                 "Cloud is unavailable for HG2 %s; sending %s through authenticated BLE",
                 self._serial,
@@ -299,16 +229,17 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
                     f"EZVIZ HG2 BLE fallback failed: {err}"
                 ) from err
             return
-        if route is None:
-            if ble_configured:
-                try:
-                    await ble.async_send(command)
-                except Exception as err:
-                    raise HomeAssistantError(
-                        f"EZVIZ HG2 BLE fallback failed: {err}"
-                    ) from err
-                return
+        if command_route == CommandRoute.BLE_NO_CLOUD_ROUTE:
+            try:
+                await ble.async_send(command)
+            except Exception as err:
+                raise HomeAssistantError(
+                    f"EZVIZ HG2 BLE fallback failed: {err}"
+                ) from err
+            return
+        if command_route == CommandRoute.NO_ROUTE:
             raise HomeAssistantError("EZVIZ HG2 resource route is unavailable")
+        assert route is not None
         payload: dict[str, Any] = {"controlDoorCmd": command}
         if position is not None:
             payload["doorPercentage"] = position
@@ -316,31 +247,31 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
             await self.hass.async_add_executor_job(
                 self.coordinator.api.send_iot_action,
                 self._serial,
-                "global",
-                route[1],
-                ACTION_DOMAIN,
-                ACTION_ID,
+                route.resource_id,
+                route.local_index,
+                route.action_domain,
+                route.action_id,
                 payload,
             )
-        except EzvizActionRejected as err:
-            if not ble_configured:
-                raise HomeAssistantError(
-                    f"EZVIZ rejected the gate command: {err}"
-                ) from err
-            _LOGGER.info(
-                "Cloud explicitly rejected %s for HG2 %s; using authenticated BLE",
-                command,
-                self._serial,
-            )
-            try:
-                await ble.async_send(command)
-            except Exception as ble_err:
-                raise HomeAssistantError(
-                    "EZVIZ cloud rejected the command and BLE fallback failed: "
-                    f"{ble_err}"
-                ) from ble_err
-            return
         except Exception as err:
+            if should_fallback_to_ble(err):
+                if not ble_configured:
+                    raise HomeAssistantError(
+                        f"EZVIZ rejected the gate command: {err}"
+                    ) from err
+                _LOGGER.info(
+                    "Cloud explicitly rejected %s for HG2 %s; using authenticated BLE",
+                    command,
+                    self._serial,
+                )
+                try:
+                    await ble.async_send(command)
+                except Exception as ble_err:
+                    raise HomeAssistantError(
+                        "EZVIZ cloud rejected the command and BLE fallback failed: "
+                        f"{ble_err}"
+                    ) from ble_err
+                return
             raise HomeAssistantError(
                 "EZVIZ cloud command failed after transmission; BLE was not retried "
                 f"because the cloud outcome is ambiguous: {err}"
@@ -348,23 +279,29 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        """Open the gate."""
+        """Open the gate.
+
+        The movement estimate only starts once the command is confirmed to
+        have reached the cloud or BLE successfully, so a failed command
+        never leaves the cover reporting a false "opening" state.
+        """
         self._cancel_auto_stop()
-        self._start_movement(100.0, self._open_duration)
         await self._async_command("open")
+        self._movement.start(100.0, self._open_duration, now=monotonic())
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the gate."""
         self._cancel_auto_stop()
-        self._start_movement(0.0, self._close_duration)
         await self._async_command("close")
+        self._movement.start(0.0, self._close_duration, now=monotonic())
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Pause gate movement."""
         self._cancel_auto_stop()
-        self._position = self._estimated_position()
-        self._clear_movement()
         await self._async_command("pause")
+        now = monotonic()
+        self._movement.position = self._movement.position_at(now)
+        self._movement.clear()
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move toward a target position, timed via the same travel model."""
@@ -373,17 +310,17 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
                 "EZVIZ HG2 travel duration is not calibrated"
             )
         target_position = float(kwargs[ATTR_POSITION])
-        current = self._estimated_position()
+        current = self._movement.position_at(monotonic())
         if current is None:
             current = 0.0 if target_position >= 50 else 100.0
         if abs(target_position - current) < 1:
             return
         extreme = 100.0 if target_position > current else 0.0
         duration = self._open_duration if extreme == 100.0 else self._close_duration
-        fraction = _inverse_eased_fraction(
+        fraction = inverse_eased_fraction(
             (target_position - current) / (extreme - current)
         )
         self._cancel_auto_stop()
-        self._start_movement(extreme, duration)
         await self._async_command("open" if extreme == 100.0 else "close")
+        self._movement.start(extreme, duration, now=monotonic())
         self._schedule_auto_stop(fraction * duration)

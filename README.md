@@ -10,8 +10,8 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 
 ## Features
 
-- Native gate `cover` with open, close, and pause commands, plus an estimated travel position based on configurable open/close durations.
-- Optional authenticated local BLE fallback for HG2 gate commands, using Home Assistant's shared Bluetooth adapters.
+- Native gate `cover` with open, close, and pause commands, plus an estimated travel position based on configurable open/close durations set independently per gate.
+- Optional authenticated local BLE fallback for HG2 gate commands, using Home Assistant's shared Bluetooth adapters, configured independently per gate.
 - A cloud custom-opening button using the distance selected by the existing custom-opening preset.
 - Direct gate status polling with a configurable interval (15 seconds by default, adjustable from the integration's **Configure** options).
 - HG2 motor speed, direction, anti-bounce sensitivity, automatic closing, STOP input, warning light, warning sound, fill light, and notification settings.
@@ -38,25 +38,34 @@ Until the repository is included in the HACS default list:
 6. Open **Settings > Devices & services > Add integration**.
 7. Search for **EZVIZ HG2 & CH3** and enter your EZVIZ account details.
 
-### Optional BLE fallback
+### Per-gate settings: travel duration and optional BLE fallback
 
-Open the integration's **Configure** dialog and enable **BLE fallback**. Select
-the HG2 and enter the six-character verification code printed on the device.
-The BLE address is optional when Home Assistant can discover the serial number
-from the HG2 advertisement. A local or remote Bluetooth adapter managed by Home
-Assistant must be within range.
+The integration's own **Configure** dialog only holds the account-wide cloud
+polling interval. Each HG2 gate's travel duration and optional BLE fallback
+are configured on the gate itself, so an account with several gates does not
+force them to share the same values.
+
+To configure a gate, open **Settings > Devices & services**, select the
+**EZVIZ HG2 & CH3** entry, and use **Add a gate** the first time (pick the HG2
+from the list of discovered, not-yet-configured gates) or **Reconfigure** on
+an already-added gate. From there you can set the full open/close travel
+times and, optionally, enable **BLE fallback**: enter the six-character
+verification code printed on the device. The BLE address is optional when
+Home Assistant can discover the serial number from the HG2 advertisement. A
+local or remote Bluetooth adapter managed by Home Assistant must be within
+range.
 
 Cloud control remains the normal path. When the cached EZVIZ status already
-marks the HG2 offline, open, close, and pause commands go directly through
+marks a gate offline, its open, close, and pause commands go directly through
 authenticated BLE. An explicit cloud rejection also falls back to BLE. If a
 cloud request fails after it was sent without a definitive response, the
 integration does not repeat it because the cloud outcome may be ambiguous.
 
 To test BLE explicitly without involving the cloud, open **Developer tools >
 Actions**, select `ezviz_hg2.send_ble_command`, then provide the configuration
-entry and one of `open`, `close`, or `pause`. The HG2 serial is taken from the
-selected entry's BLE configuration. Keep the gate
-area clear before running a movement command.
+entry and one of `open`, `close`, or `pause`. If more than one gate on the
+entry has BLE fallback configured, also provide that gate's serial. Keep the
+gate area clear before running a movement command.
 
 ## Gate behavior
 
@@ -65,7 +74,7 @@ The HG2 reports a binary door status:
 - `0`: closed
 - `1`: open or partially open
 
-The cloud does not report a reliable movement percentage, so the `cover` entity estimates its position from the configured full open/close travel times (adjustable from the integration's **Configure** options) instead of a real reading. The estimate is eased to account for the gate slowing down near the end of its travel, and it resyncs to 0% whenever the cloud confirms the gate is fully closed.
+The cloud does not report a reliable movement percentage, so the `cover` entity estimates its position from that gate's own configured full open/close travel times (see [Per-gate settings](#per-gate-settings-travel-duration-and-optional-ble-fallback)) instead of a real reading. The estimate is eased to account for the gate slowing down near the end of its travel, and it resyncs to 0% whenever the cloud confirms the gate is fully closed. A gate found already open when Home Assistant starts is not assumed to be at 100%: its position stays unknown until a command starts a fresh estimate.
 
 The position estimate, and the ability to drag to a target position, are only available once both travel times are known. Until then the entity behaves as a plain open/close/stop cover with no position. A **Calibrate travel duration** button (disabled by default, since it fully cycles the gate) measures these durations automatically: it opens the gate, waits for it to settle fully open, then times a full close down to a confirmed closed status. Both directions are set to that measurement, assuming a roughly symmetrical travel. A matching **Reset travel calibration** button (also disabled by default) clears both durations, returning to no position estimate. Dragging to a position is timed the same way as a full open/close and is not confirmed by the cloud, so it remains approximate. This is unrelated to the HG2's own native **Calibrer la course** button, which calibrates the motor's internal travel limits and does not affect what the cloud reports.
 

@@ -18,11 +18,15 @@ DEFAULT_BLE_TIMEOUT: Final = 20
 CONF_OPEN_DURATION: Final = "open_duration"
 CONF_CLOSE_DURATION: Final = "close_duration"
 CONF_BLE_FALLBACK_ENABLED: Final = "ble_fallback_enabled"
-CONF_BLE_SERIAL: Final = "ble_serial"
 CONF_BLE_ADDRESS: Final = "ble_address"
 CONF_BLE_VERIFY_CODE: Final = "ble_verify_code"
 MIN_TRAVEL_DURATION: Final = 3
 MAX_TRAVEL_DURATION: Final = 120
+
+# One "gate" subentry per HG2 holds that device's own travel duration and
+# BLE fallback settings, so multiple gates on the same EZVIZ account do not
+# share a single set of values (see coordinator.py / config_flow.py).
+SUBENTRY_TYPE_GATE: Final = "gate"
 
 SERVICE_SEND_IOT_ACTION: Final = "send_iot_action"
 SERVICE_GET_IOT_FEATURE: Final = "get_iot_feature"

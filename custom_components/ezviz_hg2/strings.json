@@ -34,22 +34,53 @@
   "options": {
     "step": {
       "init": {
-        "title": "Gate and optional BLE fallback",
-        "description": "Configure cloud polling, travel times, and optional authenticated local BLE control. When enabled, BLE is used when EZVIZ reports the HG2 offline, the last cloud refresh failed, or the cloud explicitly rejects a command. The BLE address is optional if Home Assistant can discover the serial number.",
+        "title": "Cloud polling",
+        "description": "Configure how often Home Assistant polls the EZVIZ cloud for this account. Each gate's travel duration and optional BLE fallback are configured on the gate itself (its device page), not here, so multiple gates on the same account do not share the same settings.",
         "data": {
-          "scan_interval": "Scan interval",
-          "ble_fallback_enabled": "Enable BLE fallback",
-          "ble_serial": "HG2 serial number",
-          "ble_address": "BLE address (optional)",
-          "ble_verify_code": "Six-character verification code",
-          "open_duration": "Full opening travel time (seconds)",
-          "close_duration": "Full closing travel time (seconds)"
+          "scan_interval": "Scan interval"
         }
       }
-    },
-    "error": {
-      "ble_serial_required": "Select the HG2 that should use BLE",
-      "ble_verify_code_invalid": "The verification code must contain exactly six characters"
+    }
+  },
+  "config_subentries": {
+    "gate": {
+      "entry_type": "Gate",
+      "initiate_flow": {
+        "user": "Add a gate",
+        "reconfigure": "Reconfigure gate"
+      },
+      "step": {
+        "user": {
+          "title": "Configure a gate",
+          "description": "Set this HG2's own travel duration and optional authenticated local BLE control. When enabled, BLE is used when EZVIZ reports this HG2 offline, the last cloud refresh failed, or the cloud explicitly rejects a command. The BLE address is optional if Home Assistant can discover the serial number.",
+          "data": {
+            "serial": "HG2 gate",
+            "open_duration": "Full opening travel time (seconds)",
+            "close_duration": "Full closing travel time (seconds)",
+            "ble_fallback_enabled": "Enable BLE fallback",
+            "ble_address": "BLE address (optional)",
+            "ble_verify_code": "Six-character verification code"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure this gate",
+          "description": "Set this HG2's own travel duration and optional authenticated local BLE control.",
+          "data": {
+            "open_duration": "Full opening travel time (seconds)",
+            "close_duration": "Full closing travel time (seconds)",
+            "ble_fallback_enabled": "Enable BLE fallback",
+            "ble_address": "BLE address (optional)",
+            "ble_verify_code": "Six-character verification code"
+          }
+        }
+      },
+      "abort": {
+        "no_gates_available": "Every discovered HG2 gate on this account is already configured",
+        "reconfigure_successful": "Gate settings updated"
+      },
+      "error": {
+        "ble_verify_code_invalid": "The verification code must contain exactly six characters"
+      }
     }
   },
   "entity": {

@@ -357,9 +357,22 @@ class EzvizHg2BleController:
         self._timeout = timeout
         self._lock = asyncio.Lock()
 
-    def matches(self, serial: str) -> bool:
-        """Return whether this controller is configured for a serial."""
-        return self.serial == serial.upper()
+    def is_present(self) -> bool:
+        """Best-effort check for whether this HG2 is currently reachable over BLE.
+
+        A configured BLE address is checked against Home Assistant's
+        Bluetooth manager, which tracks recent advertisements from any
+        connectable local adapter or proxy. Without a configured address,
+        the discovery cache is searched by serial, matching the same lookup
+        used when actually sending a command. If neither source has ever
+        seen the device, presence cannot be determined, so this returns
+        False rather than claiming reachability that was never observed.
+        """
+        if self._address is not None:
+            return bluetooth.async_address_present(
+                self._hass, self._address, connectable=True
+            )
+        return self._find_serial_address() is not None
 
     async def _async_find_device(self) -> BLEDevice:
         address = self._address

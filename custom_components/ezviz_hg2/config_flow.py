@@ -18,7 +18,9 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryFlow,
     OptionsFlow,
+    SubentryFlowResult,
 )
 from homeassistant.const import (
     CONF_PASSWORD,
@@ -33,7 +35,6 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_BLE_ADDRESS,
     CONF_BLE_FALLBACK_ENABLED,
-    CONF_BLE_SERIAL,
     CONF_BLE_VERIFY_CODE,
     CONF_CLOSE_DURATION,
     CONF_OPEN_DURATION,
@@ -47,9 +48,13 @@ from .const import (
     MAX_TRAVEL_DURATION,
     MIN_SCAN_INTERVAL,
     MIN_TRAVEL_DURATION,
+    SUBENTRY_TYPE_GATE,
 )
+from .device import get_device_info, get_hg2_capabilities
 
 _LOGGER = logging.getLogger(__name__)
+
+CONF_SERIAL = "serial"
 
 
 def _authenticate(data: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +85,14 @@ class EzvizHg2ConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> EzvizHg2OptionsFlow:
         """Create the options flow."""
         return EzvizHg2OptionsFlow()
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Each HG2 gate's travel duration and BLE fallback is its own subentry."""
+        return {SUBENTRY_TYPE_GATE: GateSubentryFlowHandler}
 
     @override
     async def async_step_user(
@@ -167,105 +180,131 @@ class EzvizHg2ConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class EzvizHg2OptionsFlow(OptionsFlow):
-    """Let the user tune cloud polling, travel, and optional BLE fallback."""
+    """Let the user tune the cloud polling interval for the whole account."""
 
     @override
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
         if user_input is not None:
-            normalized = dict(user_input)
-            normalized[CONF_BLE_SERIAL] = str(
-                normalized.get(CONF_BLE_SERIAL, "")
-            ).strip().upper()
-            normalized[CONF_BLE_ADDRESS] = str(
-                normalized.get(CONF_BLE_ADDRESS, "")
-            ).strip().upper()
-            normalized[CONF_BLE_VERIFY_CODE] = str(
-                normalized.get(CONF_BLE_VERIFY_CODE, "")
-            ).strip()
-            if normalized.get(CONF_BLE_FALLBACK_ENABLED):
-                if not normalized[CONF_BLE_SERIAL]:
-                    errors[CONF_BLE_SERIAL] = "ble_serial_required"
-                if len(normalized[CONF_BLE_VERIFY_CODE]) != 6:
-                    errors[CONF_BLE_VERIFY_CODE] = "ble_verify_code_invalid"
-            if not errors:
-                return self.async_create_entry(data=normalized)
+            return self.async_create_entry(data=user_input)
 
-        displayed = (
-            self.config_entry.options if user_input is None else normalized
-        )
-        current = displayed.get(
+        current = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
         )
-        current_open_duration = displayed.get(CONF_OPEN_DURATION)
-        current_close_duration = displayed.get(CONF_CLOSE_DURATION)
-        current_ble_enabled = displayed.get(
-            CONF_BLE_FALLBACK_ENABLED, False
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                ),
+            }
         )
-        current_ble_serial = displayed.get(CONF_BLE_SERIAL, "")
-        current_ble_address = displayed.get(CONF_BLE_ADDRESS, "")
-        current_ble_verify_code = displayed.get(
-            CONF_BLE_VERIFY_CODE, ""
-        )
-        runtime = self.config_entry.runtime_data
-        serials = sorted(
-            serial
-            for serial, device in getattr(runtime, "data", {}).items()
-            if isinstance(device, dict)
-            and "HG2"
-            in " ".join(
-                str(device.get("deviceInfos", {}).get(key, ""))
-                for key in (
-                    "model",
-                    "deviceSubCategory",
-                    "productName",
-                    "deviceType",
-                )
-            ).upper()
-        )
-        if not current_ble_serial and len(serials) == 1:
-            current_ble_serial = serials[0]
-        elif current_ble_serial and current_ble_serial not in serials:
-            serials.append(current_ble_serial)
-        duration_validator = vol.All(
-            vol.Coerce(int),
-            vol.Range(min=MIN_TRAVEL_DURATION, max=MAX_TRAVEL_DURATION),
-        )
-        schema_dict: dict[Any, Any] = {
-            vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
-                vol.Coerce(int),
-                vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+        return self.async_show_form(step_id="init", data_schema=schema)
+
+
+def _gate_settings_schema(
+    *, available_serials: list[str] | None
+) -> vol.Schema:
+    """Build the gate settings schema, optionally including a serial picker.
+
+    ``available_serials`` is only provided when creating a new subentry: an
+    existing one's serial is fixed (it is the subentry's unique_id).
+    """
+    duration_validator = vol.All(
+        vol.Coerce(int), vol.Range(min=MIN_TRAVEL_DURATION, max=MAX_TRAVEL_DURATION)
+    )
+    schema_dict: dict[Any, Any] = {}
+    if available_serials is not None:
+        schema_dict[vol.Required(CONF_SERIAL)] = vol.In(available_serials)
+    schema_dict.update(
+        {
+            vol.Optional(CONF_OPEN_DURATION): duration_validator,
+            vol.Optional(CONF_CLOSE_DURATION): duration_validator,
+            vol.Required(CONF_BLE_FALLBACK_ENABLED, default=False): bool,
+            vol.Optional(CONF_BLE_ADDRESS, default=""): str,
+            vol.Optional(CONF_BLE_VERIFY_CODE, default=""): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
             ),
-            vol.Required(
-                CONF_BLE_FALLBACK_ENABLED, default=current_ble_enabled
-            ): bool,
         }
-        serial_validator: Any = vol.In(serials) if serials else str
-        schema_dict[
-            vol.Optional(CONF_BLE_SERIAL, default=current_ble_serial)
-        ] = serial_validator
-        schema_dict[
-            vol.Optional(CONF_BLE_ADDRESS, default=current_ble_address)
-        ] = str
-        schema_dict[
-            vol.Optional(CONF_BLE_VERIFY_CODE, default=current_ble_verify_code)
-        ] = selector.TextSelector(
-            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+    )
+    return vol.Schema(schema_dict)
+
+
+def _normalize_gate_settings(
+    user_input: dict[str, Any], errors: dict[str, str]
+) -> dict[str, Any]:
+    """Validate and normalize one gate subentry's settings."""
+    normalized = dict(user_input)
+    normalized[CONF_BLE_ADDRESS] = str(normalized.get(CONF_BLE_ADDRESS, "")).strip().upper()
+    normalized[CONF_BLE_VERIFY_CODE] = str(normalized.get(CONF_BLE_VERIFY_CODE, "")).strip()
+    if normalized.get(CONF_BLE_FALLBACK_ENABLED) and len(normalized[CONF_BLE_VERIFY_CODE]) != 6:
+        errors[CONF_BLE_VERIFY_CODE] = "ble_verify_code_invalid"
+    return normalized
+
+
+class GateSubentryFlowHandler(ConfigSubentryFlow):
+    """Manage one HG2 gate's own travel duration and BLE fallback settings."""
+
+    def _available_serials(self) -> list[str]:
+        entry = self._get_entry()
+        coordinator = entry.runtime_data
+        configured = {
+            subentry.unique_id
+            for subentry in entry.subentries.values()
+            if subentry.subentry_type == SUBENTRY_TYPE_GATE
+        }
+        return sorted(
+            serial
+            for serial, device in getattr(coordinator, "data", {}).items()
+            if isinstance(device, dict)
+            and get_hg2_capabilities(device).gate_control
+            and serial not in configured
         )
-        if current_open_duration is None:
-            schema_dict[vol.Optional(CONF_OPEN_DURATION)] = duration_validator
-        else:
-            schema_dict[
-                vol.Optional(CONF_OPEN_DURATION, default=current_open_duration)
-            ] = duration_validator
-        if current_close_duration is None:
-            schema_dict[vol.Optional(CONF_CLOSE_DURATION)] = duration_validator
-        else:
-            schema_dict[
-                vol.Optional(CONF_CLOSE_DURATION, default=current_close_duration)
-            ] = duration_validator
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add a subentry for one not-yet-configured HG2 gate."""
+        available_serials = self._available_serials()
+        if not available_serials:
+            return self.async_abort(reason="no_gates_available")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            serial = user_input.pop(CONF_SERIAL)
+            normalized = _normalize_gate_settings(user_input, errors)
+            if not errors:
+                entry = self._get_entry()
+                device = entry.runtime_data.data.get(serial, {})
+                title = get_device_info(device).get("name") or serial
+                return self.async_create_entry(
+                    title=str(title), data=normalized, unique_id=serial
+                )
+
+        schema = self.add_suggested_values_to_schema(
+            _gate_settings_schema(available_serials=available_serials),
+            user_input,
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit an existing gate's travel duration and BLE fallback settings."""
+        subentry = self._get_reconfigure_subentry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            normalized = _normalize_gate_settings(user_input, errors)
+            if not errors:
+                return self.async_update_and_abort(
+                    self._get_entry(), subentry, data=normalized
+                )
+
+        schema = self.add_suggested_values_to_schema(
+            _gate_settings_schema(available_serials=None),
+            user_input if user_input is not None else subentry.data,
+        )
         return self.async_show_form(
-            step_id="init", data_schema=vol.Schema(schema_dict), errors=errors
+            step_id="reconfigure", data_schema=schema, errors=errors
         )

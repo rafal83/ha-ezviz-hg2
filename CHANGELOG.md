@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.0
+
+- **Breaking:** each HG2 gate's travel duration and BLE fallback settings now live on that gate's own config subentry ("Add a gate" / "Reconfigure" from the integration's page) instead of being shared across the whole EZVIZ account. Accounts with more than one HG2 no longer have their calibration or BLE settings overwrite each other; the integration's own **Configure** dialog now only holds the cloud polling interval. Existing BLE and travel-duration settings are not migrated automatically — re-add them per gate.
+- Fix: a failed open, close, or pause command no longer leaves the cover reporting a fake in-progress movement; the position estimate now only starts (or stops) once the command's outcome is known.
+- Fix: a gate found already open when Home Assistant starts is no longer assumed to be at 100% — EZVIZ only reports closed versus not-closed, so the position stays unknown until a command starts a fresh estimate.
+- Fix: a failed `DoorStatus` poll no longer keeps showing the last cached closed/open value as if it were current; the cover reports unknown until a fresh poll succeeds. One gate's poll failure no longer affects the others on the same account.
+- The cover's `available` state now reflects actual cloud or BLE reachability (including current BLE presence) instead of becoming available just because BLE fallback is configured.
+- Centralize HG2/CH3 device detection, gate routing, `DoorStatus` parsing, and cloud/BLE fallback error classification into two dependency-free modules (`device.py`, `travel.py`), replacing several duplicated implementations.
+- Add a pytest suite covering device detection and routing, position/movement estimation, cloud/BLE command dispatch and fallback classification, coordinator polling and per-gate freshness, and the new per-gate config subentry flow.
+
 ## 0.3.3
 
 - Add optional authenticated BLE configuration for one HG2, disabled by default, with serial discovery through Home Assistant's shared Bluetooth stack and an optional explicit BLE address.

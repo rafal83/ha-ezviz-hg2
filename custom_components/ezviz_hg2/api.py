@@ -14,6 +14,18 @@ class EzvizActionRejected(PyEzvizError):
     """The cloud explicitly rejected an action without executing it."""
 
 
+def should_fallback_to_ble(exc: Exception) -> bool:
+    """Return whether a cloud command failure is safe to retry over BLE.
+
+    Only an explicit, clean rejection (:class:`EzvizActionRejected`, a
+    well-formed cloud response stating the action was not executed) is
+    eligible. Network-level failures such as timeouts, connection errors, or
+    malformed responses are ambiguous: the gate may already have received
+    the command, so this integration does not duplicate it over BLE.
+    """
+    return isinstance(exc, EzvizActionRejected)
+
+
 class EzvizHg2Api:
     """Small adapter around pyezvizapi without modifying the EZVIZ integration."""
 

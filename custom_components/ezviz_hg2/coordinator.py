@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import timedelta
 import logging
 from time import monotonic
@@ -23,49 +24,24 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import EzvizHg2Api
 from .ble import EzvizHg2BleController
-from .const import DOMAIN, FULL_REFRESH_INTERVAL
+from .const import DOMAIN, FULL_REFRESH_INTERVAL, SUBENTRY_TYPE_GATE
+from .device import is_hg2, is_supported_device, resolve_gate_route, set_door_status
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _device_info(device: dict[str, Any]) -> dict[str, Any]:
-    value = device.get("deviceInfos")
-    return value if isinstance(value, dict) else {}
+@dataclass
+class GateStatusFreshness:
+    """Whether one HG2's cached ``DoorStatus`` reflects a recent, successful poll.
 
+    ``available`` is ``False`` right after a poll failure even though a
+    previously cached ``DoorStatus`` may still sit in device data; consumers
+    must check this flag before trusting that cached value instead of
+    assuming any present value is current.
+    """
 
-def _searchable_device_text(device: dict[str, Any]) -> str:
-    info = _device_info(device)
-    fields = (
-        info.get("name"),
-        info.get("model"),
-        info.get("deviceCategory"),
-        info.get("deviceSubCategory"),
-        info.get("productName"),
-        info.get("deviceType"),
-    )
-    return " ".join(str(value) for value in fields if value).upper()
-
-
-def is_supported_device(device: dict[str, Any]) -> bool:
-    """Return whether a raw EZVIZ device is relevant to this integration."""
-    text = _searchable_device_text(device)
-    return "HG2" in text or "CH3" in text
-
-
-def _is_hg2(device: dict[str, Any]) -> bool:
-    return "HG2" in _searchable_device_text(device)
-
-
-def _set_door_status(device: dict[str, Any], values: Any) -> None:
-    """Update the cached HG2 door status with a direct feature response."""
-    if not isinstance(values, list):
-        return
-    feature_info = device.setdefault("FEATURE_INFO", {})
-    index = feature_info.setdefault("0", {})
-    resource = index.setdefault("global", {})
-    door = resource.setdefault("Door", {})
-    status = door.setdefault("DoorStatus", {})
-    status["doorStatus"] = values
+    available: bool
+    updated_at: float | None
 
 
 type EzvizHg2ConfigEntry = ConfigEntry["EzvizHg2Coordinator"]
@@ -82,11 +58,15 @@ class EzvizHg2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: EzvizHg2ConfigEntry,
         api: EzvizHg2Api,
         scan_interval: int,
-        ble_controller: EzvizHg2BleController | None = None,
+        ble_controllers: dict[str, EzvizHg2BleController] | None = None,
     ) -> None:
         self.api = api
-        self.ble_controller = ble_controller
+        # Keyed by HG2 serial: each gate's BLE fallback is configured
+        # independently through its own "gate" config subentry, so an
+        # account with several HG2 devices does not share one BLE target.
+        self.ble_controllers = ble_controllers or {}
         self.all_devices: dict[str, Any] = {}
+        self.gate_status_freshness: dict[str, GateStatusFreshness] = {}
         self._last_full_refresh = 0.0
         super().__init__(
             hass,
@@ -96,6 +76,20 @@ class EzvizHg2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
             always_update=True,
         )
+
+    def gate_subentry_id(self, serial: str) -> str | None:
+        """Return the "gate" config subentry id configured for a serial, if any."""
+        for subentry_id, subentry in self.config_entry.subentries.items():
+            if subentry.subentry_type == SUBENTRY_TYPE_GATE and subentry.unique_id == serial:
+                return subentry_id
+        return None
+
+    def gate_settings(self, serial: str) -> dict[str, Any]:
+        """Return the "gate" config subentry data configured for a serial, if any."""
+        for subentry in self.config_entry.subentries.values():
+            if subentry.subentry_type == SUBENTRY_TYPE_GATE and subentry.unique_id == serial:
+                return dict(subentry.data)
+        return {}
 
     @override
     async def _async_update_data(self) -> dict[str, Any]:
@@ -115,23 +109,39 @@ class EzvizHg2Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             devices = deepcopy(self.all_devices)
 
         for serial, device in devices.items():
-            if not isinstance(device, dict) or not _is_hg2(device):
+            if not isinstance(device, dict) or not is_hg2(device):
+                continue
+            route = resolve_gate_route(device)
+            if route is None:
                 continue
             try:
                 response = await self.hass.async_add_executor_job(
                     self.api.get_iot_feature,
                     serial,
-                    "global",
-                    "0",
-                    "Door",
-                    "DoorStatus",
+                    route.resource_id,
+                    route.local_index,
+                    route.status_domain,
+                    route.status_feature,
                 )
             except (HTTPError, InvalidURL, PyEzvizError) as err:
-                _LOGGER.debug("Unable to refresh HG2 door status: %s", err)
+                # One HG2 failing to report its door status must not fail
+                # the whole account's coordinator update; other devices
+                # (and their own status) stay usable.
+                _LOGGER.debug(
+                    "Unable to refresh HG2 door status for %s: %s", serial, err
+                )
+                previous = self.gate_status_freshness.get(serial)
+                self.gate_status_freshness[serial] = GateStatusFreshness(
+                    available=False,
+                    updated_at=previous.updated_at if previous else None,
+                )
                 continue
             data = response.get("data")
             if isinstance(data, dict):
-                _set_door_status(device, data.get("doorStatus"))
+                set_door_status(device, data.get("doorStatus"), route)
+            self.gate_status_freshness[serial] = GateStatusFreshness(
+                available=True, updated_at=monotonic()
+            )
         self.all_devices = devices
         return {
             serial: device
