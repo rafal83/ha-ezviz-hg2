@@ -28,8 +28,8 @@ from .device import (
     decide_command_route,
     get_device_info,
     get_door_status,
-    get_hg2_capabilities,
     is_cloud_offline,
+    is_hg2,
     resolve_gate_route,
 )
 from .travel import MovementEstimator, inverse_eased_fraction
@@ -44,6 +44,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up covers for discovered HG2 devices.
 
+    A cover is created for every HG2, even one whose route is not (yet)
+    resolvable — such a cover is simply unavailable until the route
+    resolves, rather than never appearing at all.
+
     Each gate's travel duration lives in its own "gate" config subentry
     (see config_flow.py), so entities are grouped and added per subentry —
     a single ``async_add_entities`` call only accepts one subentry id.
@@ -51,7 +55,7 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     by_subentry: dict[str | None, list[EzvizHg2Cover]] = {}
     for serial, device in coordinator.data.items():
-        if not isinstance(device, dict) or not get_hg2_capabilities(device).gate_control:
+        if not isinstance(device, dict) or not is_hg2(device):
             continue
         settings = coordinator.gate_settings(serial)
         cover = EzvizHg2Cover(

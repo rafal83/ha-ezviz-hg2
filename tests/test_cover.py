@@ -362,10 +362,27 @@ async def test_setup_entry_groups_entities_by_their_own_subentry():
     assert groups[None] == ["SERIAL2"]
 
 
-async def test_setup_entry_skips_devices_without_gate_control():
+async def test_setup_entry_still_creates_a_cover_without_a_resolvable_route():
+    # A cover must still appear (merely unavailable) rather than vanish
+    # entirely when the route cannot yet be resolved: losing the entity
+    # outright is worse than showing it unavailable, and was a regression
+    # introduced (then reverted) during this refactor.
     routeless = _hg2_device(status=0)
     routeless["resourceInfos"] = []
     coordinator = FakeCoordinator({"SERIAL1": routeless})
+    entry = FakeEntry(coordinator)
+    add_entities, calls = _capturing_add_entities()
+
+    await async_setup_entry(FakeHassForEntity(), entry, add_entities)
+
+    covers = [c for group, _ in calls for c in group]
+    assert [c._serial for c in covers] == ["SERIAL1"]
+    assert covers[0].available is False
+
+
+async def test_setup_entry_skips_non_hg2_devices():
+    camera = {"deviceInfos": {"name": "Camera", "model": "C6", "status": 1}}
+    coordinator = FakeCoordinator({"SERIAL_CAM": camera})
     entry = FakeEntry(coordinator)
     add_entities, calls = _capturing_add_entities()
 

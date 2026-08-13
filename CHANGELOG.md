@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.1
+
+- Fix: the gate `cover` entity could fail to be created at all for an HG2 whose resource route was not yet resolvable when entities were set up, instead of appearing and simply reporting unavailable as before 0.4.0. A cover is now created for every discovered HG2 again, regardless of route state.
+
 ## 0.4.0
 
 - **Breaking:** each HG2 gate's travel duration and BLE fallback settings now live on that gate's own config subentry ("Add a gate" / "Reconfigure" from the integration's page) instead of being shared across the whole EZVIZ account. Accounts with more than one HG2 no longer have their calibration or BLE settings overwrite each other; the integration's own **Configure** dialog now only holds the cloud polling interval. Existing BLE and travel-duration settings are not migrated automatically — re-add them per gate.
