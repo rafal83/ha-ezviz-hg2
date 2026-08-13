@@ -14,7 +14,10 @@ from typing import Any
 import pytest
 from pyezvizapi.exceptions import HTTPError
 
-from custom_components.ezviz_hg2.coordinator import EzvizHg2Coordinator
+from custom_components.ezviz_hg2.coordinator import (
+    EzvizHg2Coordinator,
+    add_entities_by_gate_subentry,
+)
 
 
 class FakeConfigEntry:
@@ -194,3 +197,62 @@ async def test_gate_subentry_id_ignores_other_subentry_types(fake_hass, fake_ent
     fake_entry.subentries["sub1"] = FakeSubentry("something_else", "SERIAL1", {})
 
     assert coordinator.gate_subentry_id("SERIAL1") is None
+
+
+# --- add_entities_by_gate_subentry --------------------------------------
+
+
+def _strict_add_entities():
+    """Fake async_add_entities that records whether the kwarg was passed at all.
+
+    Home Assistant's real AddConfigEntryEntitiesCallback treats an
+    explicit ``config_subentry_id=None`` as actively (re)assigning a
+    device to "no subentry" — not the same as never mentioning it — so
+    these tests check for the keyword's *presence* in kwargs, not just
+    the resolved value a plain default-``None`` fake would hide.
+    """
+    calls: list[tuple[list[Any], dict[str, Any]]] = []
+
+    def add_entities(entities, *args: Any, **kwargs: Any) -> None:
+        calls.append((list(entities), kwargs))
+
+    return add_entities, calls
+
+
+def test_add_entities_by_gate_subentry_omits_kwarg_when_no_subentry():
+    add_entities, calls = _strict_add_entities()
+
+    add_entities_by_gate_subentry(add_entities, {None: ["cover_a", "cover_b"]})
+
+    assert len(calls) == 1
+    entities, kwargs = calls[0]
+    assert entities == ["cover_a", "cover_b"]
+    assert "config_subentry_id" not in kwargs
+
+
+def test_add_entities_by_gate_subentry_passes_kwarg_for_real_subentry():
+    add_entities, calls = _strict_add_entities()
+
+    add_entities_by_gate_subentry(add_entities, {"sub1": ["cover_a"]})
+
+    assert calls == [(["cover_a"], {"config_subentry_id": "sub1"})]
+
+
+def test_add_entities_by_gate_subentry_handles_mixed_groups_separately():
+    add_entities, calls = _strict_add_entities()
+
+    add_entities_by_gate_subentry(
+        add_entities, {None: ["cover_a"], "sub1": ["cover_b"]}
+    )
+
+    by_kwargs = {tuple(entities): kwargs for entities, kwargs in calls}
+    assert by_kwargs[("cover_a",)] == {}
+    assert by_kwargs[("cover_b",)] == {"config_subentry_id": "sub1"}
+
+
+def test_add_entities_by_gate_subentry_skips_empty_groups():
+    add_entities, calls = _strict_add_entities()
+
+    add_entities_by_gate_subentry(add_entities, {None: [], "sub1": []})
+
+    assert calls == []

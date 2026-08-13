@@ -23,7 +23,7 @@ from .const import (
     MIN_TRAVEL_DURATION,
     SUBENTRY_TYPE_GATE,
 )
-from .coordinator import EzvizHg2Coordinator
+from .coordinator import EzvizHg2Coordinator, add_entities_by_gate_subentry
 from .device import (
     get_device_info as _device_info,
     get_door_status as _door_status,
@@ -102,8 +102,7 @@ async def async_setup_entry(
         by_subentry.setdefault(subentry_id, []).extend(
             button_cls(coordinator, entry, serial) for button_cls in gate_button_classes
         )
-    for subentry_id, buttons in by_subentry.items():
-        async_add_entities(buttons, config_subentry_id=subentry_id)
+    add_entities_by_gate_subentry(async_add_entities, by_subentry)
 
 
 class EzvizTravelCalibrationButton(EzvizFeatureEntity, ButtonEntity):

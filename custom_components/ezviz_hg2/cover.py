@@ -22,7 +22,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import should_fallback_to_ble
 from .const import CONF_CLOSE_DURATION, CONF_OPEN_DURATION, DOMAIN
-from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
+from .coordinator import (
+    EzvizHg2ConfigEntry,
+    EzvizHg2Coordinator,
+    add_entities_by_gate_subentry,
+)
 from .device import (
     CommandRoute,
     decide_command_route,
@@ -65,8 +69,7 @@ async def async_setup_entry(
             settings.get(CONF_CLOSE_DURATION),
         )
         by_subentry.setdefault(coordinator.gate_subentry_id(serial), []).append(cover)
-    for subentry_id, covers in by_subentry.items():
-        async_add_entities(covers, config_subentry_id=subentry_id)
+    add_entities_by_gate_subentry(async_add_entities, by_subentry)
 
 
 class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):

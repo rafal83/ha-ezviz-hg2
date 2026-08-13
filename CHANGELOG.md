@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.2
+
+- Fix: `cover.py` and `button.py` explicitly passed `config_subentry_id=None` to `async_add_entities` for gates with no "gate" config subentry yet. Home Assistant treats an explicit `None` as actively (re)assigning a device's subentry, distinct from never mentioning the argument at all (as `number.py`/`select.py`/`switch.py`/`sensor.py` still do) — repeating that across platforms for the same device logged "assigns an existing device to a different config subentry" warnings and could prevent the gate `cover` (and the always-enabled "Custom opening" button) from being added. The argument is now only passed when a real subentry exists.
+
 ## 0.4.1
 
 - Fix: the gate `cover` entity could fail to be created at all for an HG2 whose resource route was not yet resolvable when entities were set up, instead of appearing and simply reporting unavailable as before 0.4.0. A cover is now created for every discovered HG2 again, regardless of route state.

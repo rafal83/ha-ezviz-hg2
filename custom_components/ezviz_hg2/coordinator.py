@@ -20,6 +20,8 @@ from pyezvizapi.exceptions import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import EzvizHg2Api
@@ -28,6 +30,30 @@ from .const import DOMAIN, FULL_REFRESH_INTERVAL, SUBENTRY_TYPE_GATE
 from .device import is_hg2, is_supported_device, resolve_gate_route, set_door_status
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def add_entities_by_gate_subentry(
+    async_add_entities: AddConfigEntryEntitiesCallback,
+    by_subentry: dict[str | None, list[Entity]],
+) -> None:
+    """Call ``async_add_entities`` once per gate subentry group.
+
+    Passing ``config_subentry_id=None`` explicitly is *not* the same as
+    omitting the argument: Home Assistant treats an explicit ``None`` as
+    actively (re)assigning the device to "no subentry", and doing that
+    repeatedly across platforms that otherwise never touch
+    ``config_subentry_id`` (number/select/switch/sensor) makes it look like
+    the device keeps moving between subentries, which HA warns about (and
+    will refuse in 2027.8.0). So the argument is only passed at all when
+    there is a real subentry to assign.
+    """
+    for subentry_id, entities in by_subentry.items():
+        if not entities:
+            continue
+        if subentry_id is None:
+            async_add_entities(entities)
+        else:
+            async_add_entities(entities, config_subentry_id=subentry_id)
 
 
 @dataclass
