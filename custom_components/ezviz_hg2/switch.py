@@ -8,7 +8,11 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .coordinator import EzvizHg2ConfigEntry
+from .coordinator import (
+    EzvizHg2ConfigEntry,
+    add_entities_by_gate_subentry,
+    group_entities_by_gate_subentry,
+)
 from .entity import EzvizFeatureEntity, FeatureDefinition, matching_definitions
 
 HG2 = frozenset({"HG2"})
@@ -37,9 +41,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up EZVIZ feature switches."""
     coordinator = entry.runtime_data
-    async_add_entities(
-        EzvizFeatureSwitch(coordinator, entry, serial, definition)
-        for serial, definition in matching_definitions(coordinator, SWITCHES)
+    entities_by_serial: dict[str, list[EzvizFeatureSwitch]] = {}
+    for serial, definition in matching_definitions(coordinator, SWITCHES):
+        entities_by_serial.setdefault(serial, []).append(
+            EzvizFeatureSwitch(coordinator, entry, serial, definition)
+        )
+    add_entities_by_gate_subentry(
+        async_add_entities, group_entities_by_gate_subentry(coordinator, entities_by_serial)
     )
 
 

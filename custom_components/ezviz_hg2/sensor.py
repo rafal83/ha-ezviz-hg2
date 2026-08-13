@@ -18,7 +18,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import EzvizHg2Coordinator
+from .coordinator import (
+    EzvizHg2Coordinator,
+    add_entities_by_gate_subentry,
+    group_entities_by_gate_subentry,
+)
 from .device import get_device_info as _info
 
 
@@ -90,16 +94,21 @@ async def async_setup_entry(
 ) -> None:
     """Set up HG2 discovery sensors."""
     coordinator: EzvizHg2Coordinator = entry.runtime_data
-    entities: list[SensorEntity] = [EzvizHg2DiscoverySensor(coordinator, entry)]
-    entities.extend(
-        EzvizHg2DeviceSensor(coordinator, serial)
-        for serial in coordinator.data
+    # The account-level discovery sensor is not tied to any single device,
+    # so it is never part of a gate subentry.
+    async_add_entities([EzvizHg2DiscoverySensor(coordinator, entry)])
+
+    entities_by_serial: dict[str, list[SensorEntity]] = {}
+    for serial in coordinator.data:
+        entities_by_serial.setdefault(serial, []).append(
+            EzvizHg2DeviceSensor(coordinator, serial)
+        )
+        entities_by_serial.setdefault(serial, []).append(
+            EzvizHg2RawDataSensor(coordinator, serial)
+        )
+    add_entities_by_gate_subentry(
+        async_add_entities, group_entities_by_gate_subentry(coordinator, entities_by_serial)
     )
-    entities.extend(
-        EzvizHg2RawDataSensor(coordinator, serial)
-        for serial in coordinator.data
-    )
-    async_add_entities(entities)
 
 
 class EzvizHg2DiscoverySensor(CoordinatorEntity[EzvizHg2Coordinator], SensorEntity):

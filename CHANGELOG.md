@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.3
+
+- Fix: the 0.4.2 fix only covered `cover.py` and `button.py`. `number.py`, `select.py`, `switch.py`, and `sensor.py` still never mentioned `config_subentry_id` at all for the same HG2 device, which is the same inconsistency Home Assistant warns about ("assigns an existing device to a different config subentry") — it would resurface as soon as a gate's "gate" config subentry actually exists. All platforms that create entities for an HG2 or CH3 device now group and add them through the same `group_entities_by_gate_subentry`/`add_entities_by_gate_subentry` helpers, so every entity of a device agrees on its subentry.
+
 ## 0.4.2
 
 - Fix: `cover.py` and `button.py` explicitly passed `config_subentry_id=None` to `async_add_entities` for gates with no "gate" config subentry yet. Home Assistant treats an explicit `None` as actively (re)assigning a device's subentry, distinct from never mentioning the argument at all (as `number.py`/`select.py`/`switch.py`/`sensor.py` still do) — repeating that across platforms for the same device logged "assigns an existing device to a different config subentry" warnings and could prevent the gate `cover` (and the always-enabled "Custom opening" button) from being added. The argument is now only passed when a real subentry exists.

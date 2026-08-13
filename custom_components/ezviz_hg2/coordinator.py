@@ -56,6 +56,26 @@ def add_entities_by_gate_subentry(
             async_add_entities(entities, config_subentry_id=subentry_id)
 
 
+def group_entities_by_gate_subentry(
+    coordinator: EzvizHg2Coordinator,
+    entities_by_serial: dict[str, list[Entity]],
+) -> dict[str | None, list[Entity]]:
+    """Group entities by the gate subentry (if any) of the serial they belong to.
+
+    Every entity a platform creates for a given device must agree on that
+    device's subentry, not just the gate's own cover/buttons: a CH3 or a
+    not-yet-configured HG2 has no subentry (``None``), and once a "gate"
+    subentry exists, *every* entity for that HG2 across every platform
+    (number, select, switch, sensor, buttons, cover) must reference it —
+    see :func:`add_entities_by_gate_subentry` for why mixing "explicit
+    None" and "never mentioned" across platforms is itself the bug.
+    """
+    by_subentry: dict[str | None, list[Entity]] = {}
+    for serial, entities in entities_by_serial.items():
+        by_subentry.setdefault(coordinator.gate_subentry_id(serial), []).extend(entities)
+    return by_subentry
+
+
 @dataclass
 class GateStatusFreshness:
     """Whether one HG2's cached ``DoorStatus`` reflects a recent, successful poll.

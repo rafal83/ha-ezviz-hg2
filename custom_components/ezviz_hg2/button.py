@@ -23,7 +23,11 @@ from .const import (
     MIN_TRAVEL_DURATION,
     SUBENTRY_TYPE_GATE,
 )
-from .coordinator import EzvizHg2Coordinator, add_entities_by_gate_subentry
+from .coordinator import (
+    EzvizHg2Coordinator,
+    add_entities_by_gate_subentry,
+    group_entities_by_gate_subentry,
+)
 from .device import (
     get_device_info as _device_info,
     get_door_status as _door_status,
@@ -81,28 +85,23 @@ async def async_setup_entry(
         for serial, device in coordinator.data.items()
         if isinstance(device, dict) and device_model(device) == "HG2"
     ]
-    async_add_entities(
-        EzvizTravelCalibrationButton(coordinator, entry, serial, CALIBRATION)
-        for serial in hg2_serials
-    )
 
-    # These three act on (and, for calibration, write back) a specific
-    # gate's own travel duration, which lives in that gate's "gate" config
-    # subentry (see config_flow.py). A single async_add_entities call only
-    # accepts one subentry id, so entities are grouped and added per
-    # subentry instead of all at once.
-    gate_button_classes = (
-        EzvizTravelDurationCalibrationButton,
-        EzvizTravelDurationResetButton,
-        EzvizCustomOpenButton,
-    )
-    by_subentry: dict[str | None, list[_EzvizGateButton]] = {}
+    # Every button here targets the same physical gate device as the cover
+    # and its own "gate" config subentry (see config_flow.py); all of a
+    # device's entities across every platform must agree on that subentry
+    # (see add_entities_by_gate_subentry), so they are all grouped together
+    # rather than added in separate calls per button type.
+    entities_by_serial: dict[str, list[ButtonEntity]] = {}
     for serial in hg2_serials:
-        subentry_id = coordinator.gate_subentry_id(serial)
-        by_subentry.setdefault(subentry_id, []).extend(
-            button_cls(coordinator, entry, serial) for button_cls in gate_button_classes
-        )
-    add_entities_by_gate_subentry(async_add_entities, by_subentry)
+        entities_by_serial[serial] = [
+            EzvizTravelCalibrationButton(coordinator, entry, serial, CALIBRATION),
+            EzvizTravelDurationCalibrationButton(coordinator, entry, serial),
+            EzvizTravelDurationResetButton(coordinator, entry, serial),
+            EzvizCustomOpenButton(coordinator, entry, serial),
+        ]
+    add_entities_by_gate_subentry(
+        async_add_entities, group_entities_by_gate_subentry(coordinator, entities_by_serial)
+    )
 
 
 class EzvizTravelCalibrationButton(EzvizFeatureEntity, ButtonEntity):
