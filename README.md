@@ -28,15 +28,13 @@ Unofficial Home Assistant integration for the EZVIZ HG2 gate controller and its 
 
 ## Installation with HACS
 
-Until the repository is included in the HACS default list:
+This integration is included in the HACS default list.
 
-1. Open HACS.
-2. Open the three-dot menu and select **Custom repositories**.
-3. Add `https://github.com/rafal83/ha-ezviz-hg2` as an **Integration** repository.
-4. Install **EZVIZ HG2 & CH3**.
-5. Restart Home Assistant.
-6. Open **Settings > Devices & services > Add integration**.
-7. Search for **EZVIZ HG2 & CH3** and enter your EZVIZ account details.
+1. [Open HACS to this repository](https://my.home-assistant.io/redirect/hacs_repository/?owner=rafal83&repository=ha-ezviz-hg2&category=integration) (or use the badge above), or search for **EZVIZ HG2 & CH3** manually.
+2. Install **EZVIZ HG2 & CH3**.
+3. Restart Home Assistant.
+4. [Add the integration](https://my.home-assistant.io/redirect/config_flow_start/?domain=ezviz_hg2) directly, or open **Settings > Devices & services > Add integration** and search for **EZVIZ HG2 & CH3** manually.
+5. Enter your EZVIZ account details.
 
 ### Per-gate settings: travel duration and optional BLE fallback
 
