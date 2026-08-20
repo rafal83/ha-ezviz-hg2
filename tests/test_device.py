@@ -222,6 +222,55 @@ def test_capabilities_ble_control_is_a_model_fallback():
     assert device.get_hg2_capabilities(_device()).ble_control is True
 
 
+# --- firmware upgrade parsing -----------------------------------------------
+
+
+def test_is_upgrade_available_when_flagged_by_cloud():
+    d = _device(UPGRADE={"isNeedUpgrade": 3})
+    assert device.is_upgrade_available(d) is True
+
+
+def test_is_upgrade_available_false_when_not_flagged():
+    assert device.is_upgrade_available(_device(UPGRADE={"isNeedUpgrade": 0})) is False
+    assert device.is_upgrade_available(_device()) is False
+    assert device.is_upgrade_available(_device(UPGRADE="nope")) is False
+
+
+def test_get_latest_firmware_info():
+    d = _device(
+        UPGRADE={
+            "isNeedUpgrade": 3,
+            "upgradePackageInfo": {"version": "1.2.3", "desc": "Bug fixes"},
+        }
+    )
+    assert device.get_latest_firmware_info(d) == {
+        "version": "1.2.3",
+        "desc": "Bug fixes",
+    }
+
+
+def test_get_latest_firmware_info_missing_is_empty_dict():
+    assert device.get_latest_firmware_info(_device()) == {}
+    assert device.get_latest_firmware_info(_device(UPGRADE={})) == {}
+
+
+def test_is_upgrade_in_progress():
+    assert device.is_upgrade_in_progress(_device(STATUS={"upgradeStatus": 0})) is True
+    assert device.is_upgrade_in_progress(_device(STATUS={"upgradeStatus": 1})) is False
+    assert device.is_upgrade_in_progress(_device()) is False
+    assert device.is_upgrade_in_progress(_device(STATUS="nope")) is False
+
+
+def test_get_upgrade_percent():
+    d = _device(STATUS={"upgradeProcess": 42})
+    assert device.get_upgrade_percent(d) == 42
+
+
+def test_get_upgrade_percent_missing_is_none():
+    assert device.get_upgrade_percent(_device()) is None
+    assert device.get_upgrade_percent(_device(STATUS={"upgradeProcess": "nope"})) is None
+
+
 # --- command routing decision -----------------------------------------------
 
 

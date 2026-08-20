@@ -205,6 +205,47 @@ def set_door_status(
     feature["doorStatus"] = values
 
 
+# --- Firmware upgrade ---------------------------------------------------------
+
+
+def get_upgrade_info(device: dict[str, Any]) -> dict[str, Any]:
+    """Return the raw ``UPGRADE`` mapping cached for a device."""
+    upgrade = device.get("UPGRADE")
+    return upgrade if isinstance(upgrade, dict) else {}
+
+
+def is_upgrade_available(device: dict[str, Any]) -> bool:
+    """Return whether EZVIZ has a firmware update queued for this device.
+
+    Mirrors pyezvizapi's own camera status parsing: ``isNeedUpgrade == 3``
+    means an update is available and not yet installed.
+    """
+    return get_upgrade_info(device).get("isNeedUpgrade") == 3
+
+
+def get_latest_firmware_info(device: dict[str, Any]) -> dict[str, Any]:
+    """Return the latest firmware package metadata (version/desc), if any."""
+    info = get_upgrade_info(device).get("upgradePackageInfo")
+    return info if isinstance(info, dict) else {}
+
+
+def is_upgrade_in_progress(device: dict[str, Any]) -> bool:
+    """Return whether EZVIZ reports a firmware upgrade currently running."""
+    status = device.get("STATUS")
+    if not isinstance(status, dict):
+        return False
+    return status.get("upgradeStatus") == 0
+
+
+def get_upgrade_percent(device: dict[str, Any]) -> int | None:
+    """Return the in-progress firmware upgrade completion percentage."""
+    status = device.get("STATUS")
+    if not isinstance(status, dict):
+        return None
+    percent = status.get("upgradeProcess")
+    return percent if isinstance(percent, int) else None
+
+
 # --- Feature-based capability detection --------------------------------------
 
 

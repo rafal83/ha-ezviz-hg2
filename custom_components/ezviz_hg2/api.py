@@ -147,6 +147,10 @@ class EzvizHg2Api:
             raise PyEzvizError(f"EZVIZ feature write rejected: {json.dumps(meta)}")
         return result
 
+    def upgrade_device(self, serial: str) -> bool:
+        """Trigger the firmware upgrade EZVIZ already has queued for a device."""
+        return self._client.upgrade_device(serial)
+
     def get_cloud_metadata(self, page_filter: str | None) -> dict[str, Any]:
         """Return read-only cloud metadata or one pagelist filter."""
         client = self._client

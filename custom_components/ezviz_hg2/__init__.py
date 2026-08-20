@@ -42,7 +42,7 @@ from .const import (
 )
 from .coordinator import EzvizHg2ConfigEntry, EzvizHg2Coordinator
 
-PLATFORMS = ["button", "cover", "number", "select", "sensor", "switch"]
+PLATFORMS = ["button", "cover", "number", "select", "sensor", "switch", "update"]
 
 SERVICE_SCHEMA = vol.Schema(
     {
