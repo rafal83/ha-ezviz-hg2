@@ -90,6 +90,9 @@
       },
       "raw_data": {
           "name": "Raw data"
+      },
+      "wifi_signal": {
+          "name": "WiFi signal"
       }
     },
     "button": {

@@ -12,6 +12,7 @@ tests/conftest.py for why. This covers the refactor's core "Position" and
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -105,6 +106,10 @@ def make_cover(coordinator: FakeCoordinator, serial: str = "SERIAL1", *, calibra
 class FakeHassForEntity:
     async def async_add_executor_job(self, func, *args: Any) -> Any:
         return func(*args)
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop:
+        return asyncio.get_running_loop()
 
 
 # --- fake movement after failed commands ------------------------------------

@@ -40,6 +40,8 @@ from .travel import MovementEstimator, inverse_eased_fraction
 
 _LOGGER = logging.getLogger(__name__)
 
+_OPEN_RETRY_DELAY = 10
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -94,6 +96,7 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
         self._close_duration = close_duration
         self._movement = MovementEstimator()
         self._auto_stop_unsub: Callable[[], None] | None = None
+        self._open_retry_unsub: Callable[[], None] | None = None
 
     @property
     def _calibrated(self) -> bool:
@@ -181,6 +184,39 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
             self._auto_stop_unsub()
             self._auto_stop_unsub = None
 
+    def _cancel_open_retry(self) -> None:
+        if self._open_retry_unsub is not None:
+            self._open_retry_unsub()
+            self._open_retry_unsub = None
+
+    def _schedule_open_retry(self) -> None:
+        self._cancel_open_retry()
+
+        async def _retry_if_still_closed(_now: Any) -> None:
+            self._open_retry_unsub = None
+            await self.coordinator.async_refresh()
+            device = self.coordinator.data.get(self._serial)
+            status = (
+                get_door_status(device)
+                if isinstance(device, dict) and self._gate_status_fresh()
+                else None
+            )
+            if status == 0:
+                _LOGGER.warning(
+                    "HG2 %s still reports fully closed %s seconds after an open "
+                    "command; retrying once",
+                    self._serial,
+                    _OPEN_RETRY_DELAY,
+                )
+                await self._async_command("open")
+                self._movement.start(
+                    100.0, self._open_duration, now=monotonic()
+                )
+
+        self._open_retry_unsub = async_call_later(
+            self.hass, _OPEN_RETRY_DELAY, _retry_if_still_closed
+        )
+
     def _schedule_auto_stop(self, delay: float) -> None:
         self._cancel_auto_stop()
 
@@ -208,6 +244,7 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         self._cancel_auto_stop()
+        self._cancel_open_retry()
         await super().async_will_remove_from_hass()
 
     async def _async_command(
@@ -290,21 +327,28 @@ class EzvizHg2Cover(CoordinatorEntity[EzvizHg2Coordinator], CoverEntity):
 
         The movement estimate only starts once the command is confirmed to
         have reached the cloud or BLE successfully, so a failed command
-        never leaves the cover reporting a false "opening" state.
+        never leaves the cover reporting a false "opening" state. EZVIZ can
+        acknowledge a cloud command without the physical gate moving, so the
+        real DoorStatus is checked shortly afterwards and one harmless retry
+        is sent when the gate still reports fully closed.
         """
         self._cancel_auto_stop()
+        self._cancel_open_retry()
         await self._async_command("open")
         self._movement.start(100.0, self._open_duration, now=monotonic())
+        self._schedule_open_retry()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the gate."""
         self._cancel_auto_stop()
+        self._cancel_open_retry()
         await self._async_command("close")
         self._movement.start(0.0, self._close_duration, now=monotonic())
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Pause gate movement."""
         self._cancel_auto_stop()
+        self._cancel_open_retry()
         await self._async_command("pause")
         now = monotonic()
         self._movement.position = self._movement.position_at(now)

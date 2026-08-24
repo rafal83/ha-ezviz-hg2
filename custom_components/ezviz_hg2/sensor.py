@@ -9,9 +9,10 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfInformation
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfInformation
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -23,7 +24,7 @@ from .coordinator import (
     add_entities_by_gate_subentry,
     group_entities_by_gate_subentry,
 )
-from .device import get_device_info as _info
+from .device import get_device_info as _info, get_wifi_signal
 
 
 def _feature_paths(value: Any, prefix: str = "") -> list[str]:
@@ -99,13 +100,15 @@ async def async_setup_entry(
     async_add_entities([EzvizHg2DiscoverySensor(coordinator, entry)])
 
     entities_by_serial: dict[str, list[SensorEntity]] = {}
-    for serial in coordinator.data:
+    for serial, device in coordinator.data.items():
         entities_by_serial.setdefault(serial, []).append(
             EzvizHg2DeviceSensor(coordinator, serial)
         )
         entities_by_serial.setdefault(serial, []).append(
             EzvizHg2RawDataSensor(coordinator, serial)
         )
+        if isinstance(device, dict) and get_wifi_signal(device) is not None:
+            entities_by_serial[serial].append(EzvizHg2WifiSignalSensor(coordinator, serial))
     add_entities_by_gate_subentry(
         async_add_entities, group_entities_by_gate_subentry(coordinator, entities_by_serial)
     )
@@ -120,6 +123,7 @@ class EzvizHg2DiscoverySensor(CoordinatorEntity[EzvizHg2Coordinator], SensorEnti
         icon="mdi:gate",
         entity_category=EntityCategory.DIAGNOSTIC,
     )
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: EzvizHg2Coordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
@@ -271,3 +275,49 @@ class EzvizHg2RawDataSensor(CoordinatorEntity[EzvizHg2Coordinator], SensorEntity
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"raw": self.coordinator.data[self._serial]}
+
+
+class EzvizHg2WifiSignalSensor(CoordinatorEntity[EzvizHg2Coordinator], SensorEntity):
+    """Report the WiFi signal quality EZVIZ has for one device."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "wifi_signal"
+    _attr_icon = "mdi:wifi"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = PERCENTAGE
+
+    def __init__(self, coordinator: EzvizHg2Coordinator, serial: str) -> None:
+        super().__init__(coordinator)
+        self._serial = serial
+        self._attr_unique_id = f"{serial}_wifi_signal"
+
+    @property
+    def available(self) -> bool:
+        device = self.coordinator.data.get(self._serial)
+        return (
+            super().available
+            and isinstance(device, dict)
+            and get_wifi_signal(device) is not None
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        device = self.coordinator.data.get(self._serial)
+        return get_wifi_signal(device) if isinstance(device, dict) else None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        info = _info(self.coordinator.data[self._serial])
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._serial)},
+            name=str(info.get("name") or "EZVIZ HG2"),
+            manufacturer="EZVIZ",
+            model=str(
+                info.get("model")
+                or info.get("deviceSubCategory")
+                or "HG2"
+            ),
+            sw_version=info.get("version"),
+            serial_number=self._serial,
+        )

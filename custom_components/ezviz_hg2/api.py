@@ -151,6 +151,10 @@ class EzvizHg2Api:
         """Trigger the firmware upgrade EZVIZ already has queued for a device."""
         return self._client.upgrade_device(serial)
 
+    def set_switch(self, serial: str, switch_type: int, enable: bool) -> bool:
+        """Toggle one EZVIZ "camera-style" switch (see pyezvizapi ``DeviceSwitchType``)."""
+        return self._client.switch_status(serial, switch_type, int(enable))
+
     def get_cloud_metadata(self, page_filter: str | None) -> dict[str, Any]:
         """Return read-only cloud metadata or one pagelist filter."""
         client = self._client

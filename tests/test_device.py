@@ -271,6 +271,37 @@ def test_get_upgrade_percent_missing_is_none():
     assert device.get_upgrade_percent(_device(STATUS={"upgradeProcess": "nope"})) is None
 
 
+# --- SWITCH list / WiFi parsing ----------------------------------------------
+
+
+def test_get_switch_enabled_finds_matching_type():
+    d = _device(SWITCH=[{"type": 611, "enable": False}, {"type": 3, "enable": True}])
+    assert device.get_switch_enabled(d, 611) is False
+    assert device.get_switch_enabled(d, 3) is True
+
+
+def test_get_switch_enabled_missing_type_is_none():
+    d = _device(SWITCH=[{"type": 3, "enable": True}])
+    assert device.get_switch_enabled(d, 611) is None
+
+
+def test_get_switch_enabled_invalid_shape_is_none():
+    assert device.get_switch_enabled(_device(), 611) is None
+    assert device.get_switch_enabled(_device(SWITCH="nope"), 611) is None
+    assert device.get_switch_enabled(_device(SWITCH=[{"type": 611, "enable": "nope"}]), 611) is None
+
+
+def test_get_wifi_signal():
+    d = _device(WIFI={"signal": 60, "ssid": "test"})
+    assert device.get_wifi_signal(d) == 60
+
+
+def test_get_wifi_signal_missing_is_none():
+    assert device.get_wifi_signal(_device()) is None
+    assert device.get_wifi_signal(_device(WIFI="nope")) is None
+    assert device.get_wifi_signal(_device(WIFI={"signal": "nope"})) is None
+
+
 # --- command routing decision -----------------------------------------------
 
 

@@ -246,6 +246,37 @@ def get_upgrade_percent(device: dict[str, Any]) -> int | None:
     return percent if isinstance(percent, int) else None
 
 
+# --- "Camera-style" SWITCH list -----------------------------------------------
+
+
+def get_switch_enabled(device: dict[str, Any], switch_type: int) -> bool | None:
+    """Return the current state of one EZVIZ ``SWITCH`` entry, if present.
+
+    EZVIZ reports a flat list of ``{"type": <int>, "enable": <bool>}`` items
+    alongside the per-feature ``FEATURE_INFO`` tree (see ``pyezvizapi``'s
+    ``DeviceSwitchType`` enum for what each numeric type means). ``None``
+    means this device did not report that switch type at all, as opposed to
+    reporting it disabled.
+    """
+    switches = device.get("SWITCH")
+    if not isinstance(switches, list):
+        return None
+    for item in switches:
+        if isinstance(item, dict) and item.get("type") == switch_type:
+            value = item.get("enable")
+            return value if isinstance(value, bool) else None
+    return None
+
+
+def get_wifi_signal(device: dict[str, Any]) -> int | None:
+    """Return the WiFi signal quality EZVIZ reports for a device, if wireless."""
+    wifi = device.get("WIFI")
+    if not isinstance(wifi, dict):
+        return None
+    signal = wifi.get("signal")
+    return signal if isinstance(signal, int) else None
+
+
 # --- Feature-based capability detection --------------------------------------
 
 

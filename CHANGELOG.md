@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.6.0
+
+- The gate `cover` now checks `DoorStatus` again 10 seconds after an **Open** command and retries once if EZVIZ still reports the gate fully closed — EZVIZ can acknowledge a cloud open command without the physical gate actually moving.
+- Add a diagnostic WiFi signal `sensor` for any device that reports one.
+- Add a `switch` for the CH3 chime's indicator light, read from EZVIZ's "camera-style" `SWITCH` list rather than the `FEATURE_INFO` tree used by the other feature switches.
+
 ## 0.5.0
 
 - Add a firmware `update` entity for each discovered HG2/CH3 device, sourced from the same EZVIZ cloud payload the coordinator already polls. It reports the installed and available versions, release notes, and in-progress percentage, and its **Install** action triggers the EZVIZ cloud firmware upgrade (`pyezvizapi`'s `upgrade_device`) — the same one the EZVIZ app itself uses.
