@@ -57,7 +57,7 @@ class EzvizHg2Api:
         )
         body = {"value": dict(payload or {})}
 
-        # pyezvizapi 1.0.0.7 has no public generic action helper. Keep the
+        # pyezvizapi 1.0.5.0 has no public generic action helper. Keep the
         # private API use isolated here so it is easy to replace later.
         if hasattr(client, "_request_json"):
             result = client._request_json(  # noqa: SLF001
