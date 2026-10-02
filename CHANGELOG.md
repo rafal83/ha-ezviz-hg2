@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.6.1
+
+- Require `pyezvizapi>=1.0.5.0` instead of pinning `1.0.0.7`, which conflicted with the version Home Assistant Core now ships for its own EZVIZ integration.
+- Cloud requests now go through `pyezvizapi`'s own HTTP layer, which logs in again and retries once when the EZVIZ session has expired (HTTP 401) instead of failing until the next full refresh.
+- Fix: an HTTP error while reading one HG2's door status could fail the whole account's update instead of only marking that gate unavailable.
+- A door status read that EZVIZ answers with an error code now marks the gate status unavailable instead of reporting it as freshly updated.
+
 ## 0.6.0
 
 - The gate `cover` now checks `DoorStatus` again 10 seconds after an **Open** command and retries once if EZVIZ still reports the gate fully closed — EZVIZ can acknowledge a cloud open command without the physical gate actually moving.
