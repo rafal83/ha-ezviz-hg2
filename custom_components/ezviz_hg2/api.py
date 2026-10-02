@@ -50,28 +50,19 @@ class EzvizHg2Api:
         payload: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         """Send an explicitly requested generic EZVIZ IoT action."""
-        client = self._client
         path = (
             f"/v3/iot-feature/action/{serial.upper()}/{resource_id}/"
             f"{local_index}/{domain_id}/{action_id}"
         )
         body = {"value": dict(payload or {})}
 
-        # pyezvizapi 1.0.5.0 has no public generic action helper. Keep the
-        # private API use isolated here so it is easy to replace later.
-        if hasattr(client, "_request_json"):
-            result = client._request_json(  # noqa: SLF001
-                "PUT", path, json_body=body
-            )
-        else:
-            token = client._token  # noqa: SLF001
-            response = client._session.put(  # noqa: SLF001
-                f"https://{token['api_url']}{path}",
-                json=body,
-                timeout=client._timeout,  # noqa: SLF001
-            )
-            response.raise_for_status()
-            result = response.json()
+        # pyezvizapi's public set_iot_action raises a generic PyEzvizError on a
+        # rejected action, which is indistinguishable from an ambiguous failure.
+        # The private request helper keeps the meta check here so a clean
+        # rejection can still be classified as EzvizActionRejected.
+        result = self._client._request_json(  # noqa: SLF001
+            "PUT", path, json_body=body
+        )
 
         if not isinstance(result, dict):
             raise PyEzvizError("Unexpected EZVIZ action response")
@@ -92,21 +83,9 @@ class EzvizHg2Api:
         feature_id: str,
     ) -> dict[str, Any]:
         """Read one explicitly requested EZVIZ IoT feature."""
-        client = self._client
-        path = (
-            f"/v3/iot-feature/feature/{serial.upper()}/{resource_id}/"
-            f"{local_index}/{domain_id}/{feature_id}"
+        result = self._client.get_device_feature_value(
+            serial, resource_id, domain_id, feature_id, local_index=local_index
         )
-        if hasattr(client, "_request_json"):
-            result = client._request_json("GET", path)  # noqa: SLF001
-        else:
-            token = client._token  # noqa: SLF001
-            response = client._session.get(  # noqa: SLF001
-                f"https://{token['api_url']}{path}",
-                timeout=client._timeout,  # noqa: SLF001
-            )
-            response.raise_for_status()
-            result = response.json()
         if not isinstance(result, dict):
             raise PyEzvizError("Unexpected EZVIZ feature response")
         return result
@@ -121,30 +100,12 @@ class EzvizHg2Api:
         value: Any,
     ) -> dict[str, Any]:
         """Write one EZVIZ IoT feature using the app's value envelope."""
-        client = self._client
-        path = (
-            f"/v3/iot-feature/feature/{serial.upper()}/{resource_id}/"
-            f"{local_index}/{domain_id}/{feature_id}"
+        # The library raises PyEzvizError itself when meta.code is not 200.
+        result = self._client.set_iot_feature(
+            serial, resource_id, local_index, domain_id, feature_id, {"value": value}
         )
-        body = {"value": value}
-        if hasattr(client, "_request_json"):
-            result = client._request_json(  # noqa: SLF001
-                "PUT", path, json_body=body
-            )
-        else:
-            token = client._token  # noqa: SLF001
-            response = client._session.put(  # noqa: SLF001
-                f"https://{token['api_url']}{path}",
-                json=body,
-                timeout=client._timeout,  # noqa: SLF001
-            )
-            response.raise_for_status()
-            result = response.json()
         if not isinstance(result, dict):
             raise PyEzvizError("Unexpected EZVIZ feature write response")
-        meta = result.get("meta")
-        if isinstance(meta, dict) and meta.get("code") != 200:
-            raise PyEzvizError(f"EZVIZ feature write rejected: {json.dumps(meta)}")
         return result
 
     def upgrade_device(self, serial: str) -> bool:
@@ -250,19 +211,9 @@ class EzvizHg2Api:
                 "version": product.get("version", ""),
                 "type": "EIB",
             }
-            if hasattr(client, "_request_json"):
-                result = client._request_json(  # noqa: SLF001
-                    "GET", path, params=params
-                )
-            else:
-                token = client._token  # noqa: SLF001
-                response = client._session.get(  # noqa: SLF001
-                    f"https://{token['api_url']}{path}",
-                    params=params,
-                    timeout=client._timeout,  # noqa: SLF001
-                )
-                response.raise_for_status()
-                result = response.json()
+            result = client._request_json(  # noqa: SLF001
+                "GET", path, params=params
+            )
             if not isinstance(result, dict):
                 raise PyEzvizError("Unexpected EZVIZ product config response")
             return result
@@ -272,7 +223,7 @@ class EzvizHg2Api:
                 raise PyEzvizError("Unexpected EZVIZ pagelist response")
             return result
 
-        service_urls = client._token.get("service_urls", {})  # noqa: SLF001
+        service_urls = client.export_token().get("service_urls", {})
         if not isinstance(service_urls, dict):
             raise PyEzvizError("Unexpected EZVIZ service metadata")
         return service_urls
@@ -297,19 +248,9 @@ class EzvizHg2Api:
             "groupId": group_ids_value if len(group_ids) == 1 else "",
             "groupIds": group_ids_value,
         }
-        if hasattr(client, "_request_json"):
-            result = client._request_json(  # noqa: SLF001
-                "GET", path, params=params
-            )
-        else:
-            token = client._token  # noqa: SLF001
-            response = client._session.get(  # noqa: SLF001
-                f"https://{token['api_url']}{path}",
-                params=params,
-                timeout=client._timeout,  # noqa: SLF001
-            )
-            response.raise_for_status()
-            result = response.json()
+        result = client._request_json(  # noqa: SLF001
+            "GET", path, params=params
+        )
         if not isinstance(result, dict):
             raise PyEzvizError("Unexpected EZVIZ manual scene response")
         return result
